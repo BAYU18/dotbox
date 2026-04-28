@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dots and Boxes</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header dengan Dark Mode Toggle -->
+        <header>
+            <h1>🎯 Dots & Boxes</h1>
+            <button id="darkModeToggle" class="icon-btn" title="Toggle Dark Mode">
+                🌙
+            </button>
+        </header>
+
+        <!-- Menu Konfigurasi -->
+        <div id="configMenu" class="menu">
+            <h2>⚙️ Konfigurasi Game</h2>
+            
+            <div class="config-group">
+                <label for="totalPlayers">Total Pemain (2-4)</label>
+                <div class="number-selector">
+                    <button class="btn-minus" data-action="decrease" data-target="totalPlayers">-</button>
+                    <input type="number" id="totalPlayers" value="2" min="2" max="4" readonly>
+                    <button class="btn-plus" data-action="increase" data-target="totalPlayers">+</button>
+                </div>
+            </div>
+
+            <div class="config-group">
+                <label for="aiCount">Jumlah AI (0-<span id="maxAiLabel">3</span>)</label>
+                <div class="number-selector">
+                    <button class="btn-minus" data-action="decrease" data-target="aiCount">-</button>
+                    <input type="number" id="aiCount" value="1" min="0" max="3" readonly>
+                    <button class="btn-plus" data-action="increase" data-target="aiCount">+</button>
+                </div>
+            </div>
+
+            <div class="config-group">
+                <label for="gridSize">Ukuran Grid Titik</label>
+                <div class="grid-options">
+                    <button class="grid-btn" data-size="3">3×3</button>
+                    <button class="grid-btn active" data-size="5">5×5</button>
+                    <button class="grid-btn" data-size="7">7×7</button>
+                </div>
+            </div>
+
+            <div class="config-group">
+                <label for="aiDepth">Kedalaman AI (1-5)</label>
+                <div class="number-selector">
+                    <button class="btn-minus" data-action="decrease" data-target="aiDepth">-</button>
+                    <input type="number" id="aiDepth" value="3" min="1" max="5" readonly>
+                    <button class="btn-plus" data-action="increase" data-target="aiDepth">+</button>
+                </div>
+            </div>
+
+            <button id="startGame" class="btn-primary">🎮 Mulai Game</button>
+        </div>
+
+        <!-- Game Board Area -->
+        <div id="gameArea" class="hidden">
+            <!-- Info Panel -->
+            <div class="info-panel">
+                <div class="current-turn" id="currentTurn">
+                    <span class="turn-indicator"></span>
+                    <span class="turn-text">Giliran: Pemain 1</span>
+                </div>
+                <div class="scores" id="scores"></div>
+            </div>
+
+            <!-- Game Board Canvas -->
+            <div class="board-container">
+                <canvas id="gameCanvas"></canvas>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls">
+                <button id="newGameBtn" class="btn-control">🔄 New Game</button>
+                <button id="resetBoardBtn" class="btn-control">↩️ Reset Board</button>
+                <button id="continueBtn" class="btn-control">▶️ Continue</button>
+                <button id="replayBtn" class="btn-control">📹 Replay</button>
+            </div>
+
+            <!-- Replay Controls -->
+            <div id="replayControls" class="replay-controls hidden">
+                <div class="replay-timeline">
+                    <span id="replayStep">Step: 0/0</span>
+                    <input type="range" id="replaySlider" min="0" max="0" value="0">
+                </div>
+                <div class="replay-buttons">
+                    <button id="replayPlayPause" class="btn-replay">▶️ Play</button>
+                    <button id="replayPrev" class="btn-replay">⏮️</button>
+                    <button id="replayNext" class="btn-replay">⏭️</button>
+                    <button id="replayClose" class="btn-replay">❌</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Modal -->
+        <div id="gameOverModal" class="modal hidden">
+            <div class="modal-content">
+                <h2>🏆 Game Selesai!</h2>
+                <div id="winnerDisplay"></div>
+                <div id="finalScores"></div>
+                <button id="playAgainBtn" class="btn-primary">🎮 Main Lagi</button>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="ai-engine.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
