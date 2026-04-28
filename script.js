@@ -419,8 +419,8 @@ function handleCanvasClick(event) {
     if (currentPlayer.isAI) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
     
     handleLineSelection(x, y);
 }
@@ -434,25 +434,31 @@ function handleTouchStart(event) {
     
     const rect = canvas.getBoundingClientRect();
     const touch = event.touches[0];
-    const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
     
     handleLineSelection(x, y);
 }
 
 function handleLineSelection(x, y) {
     const gridSize = gameState.config.gridSize;
-    const hitRadius = 25; // Larger hit area for better precision
+    const hitRadius = 30; // Hit area for better mobile precision
     
-    // Check horizontal edges first (they're usually more visible)
+    let bestMatch = null;
+    let bestDistance = Infinity;
+    
+    // Find the closest available line (both horizontal and vertical)
+    // Check horizontal edges
     for (let row = 0; row < gridSize; row++) {
         for (let col = 0; col < gridSize - 1; col++) {
             if (gameState.edges.horizontal[row][col].owner !== null) continue;
             
             const line = lineSegments.horizontal[row][col];
-            if (isPointNearLine(x, y, line.start, line.end, hitRadius)) {
-                makeMove('horizontal', row, col);
-                return;
+            const distance = getDistanceToLine(x, y, line.start, line.end);
+            
+            if (distance < bestDistance && distance < hitRadius) {
+                bestDistance = distance;
+                bestMatch = { type: 'horizontal', row, col, distance };
             }
         }
     }
@@ -463,30 +469,42 @@ function handleLineSelection(x, y) {
             if (gameState.edges.vertical[row][col].owner !== null) continue;
             
             const line = lineSegments.vertical[row][col];
-            if (isPointNearLine(x, y, line.start, line.end, hitRadius)) {
-                makeMove('vertical', row, col);
-                return;
+            const distance = getDistanceToLine(x, y, line.start, line.end);
+            
+            if (distance < bestDistance && distance < hitRadius) {
+                bestDistance = distance;
+                bestMatch = { type: 'vertical', row, col, distance };
             }
         }
     }
+    
+    // Make the best match if found
+    if (bestMatch) {
+        makeMove(bestMatch.type, bestMatch.row, bestMatch.col);
+    }
 }
 
-function isPointNearLine(px, py, start, end, radius) {
+function getDistanceToLine(px, py, start, end) {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const lineLength = Math.sqrt(dx * dx + dy * dy);
     
-    if (lineLength === 0) return false;
+    if (lineLength === 0) return Infinity;
     
     // Calculate perpendicular distance from point to line
     const distance = Math.abs(dy * px - dx * py + end.x * start.y - end.y * start.x) / lineLength;
     
-    if (distance > radius) return false;
-    
-    // Check if point is within line segment bounds
+    // Calculate how far along the line the closest point is
     const dotProduct = ((px - start.x) * dx + (py - start.y) * dy) / (lineLength * lineLength);
     
-    return dotProduct >= -0.1 && dotProduct <= 1.1;
+    // If closest point is outside the line segment, return distance to nearest endpoint
+    if (dotProduct < 0) {
+        return Math.sqrt((px - start.x) ** 2 + (py - start.y) ** 2);
+    } else if (dotProduct > 1) {
+        return Math.sqrt((px - end.x) ** 2 + (py - end.y) ** 2);
+    }
+    
+    return distance;
 }
 
 // ============ GAME LOGIC ============
