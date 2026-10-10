@@ -53,27 +53,30 @@ Skrip ini **tidak** memakai `--force` maupun `--force-with-lease`.
 
 ---
 
-## 2. Pasang vhost nginx (sekali saja)
+## 2. Pasang rute nginx `/dotbox/`
 
-Lewati langkah ini bila `/etc/nginx/sites-enabled/dotbox.conf` sudah ada.
+Lewati langkah ini bila `/etc/nginx/snippets/dotbox.conf` sudah ada. Cukup **satu perintah**
+(idempoten — aman dijalankan berulang):
 
 ```bash
-# a. salin konfigurasi ke server
-scp -F "$SSHCFG" deploy/nginx-dotbox.conf aidev:/etc/nginx/sites-available/dotbox.conf
-
-# b. uji konfigurasi SEBELUM menerapkan — jangan reload bila ini gagal
-ssh -F "$SSHCFG" aidev 'nginx -t'
-
-# c. aktifkan + uji ulang + reload
-ssh -F "$SSHCFG" aidev '
-  ln -sfn /etc/nginx/sites-available/dotbox.conf /etc/nginx/sites-enabled/dotbox.conf
-  nginx -t && systemctl reload nginx && echo "nginx dimuat ulang: OK"
-'
+deploy/install-nginx.sh
 ```
 
-> **Penting.** Port 80 di server ini melayani vhost `default` yang sudah ada. Konfigurasi dotbox
-> sengaja memakai `location /dotbox/` (sub-path) supaya **tidak** mengambil alih akar. Jangan
-> mengubahnya menjadi `location /` tanpa persetujuan.
+Skrip itu: menyalin `deploy/nginx-dotbox.conf` ke `/etc/nginx/snippets/dotbox.conf`, menyisipkan
+satu baris `include /etc/nginx/snippets/dotbox.conf;` ke dalam blok `server` milik vhost
+`default`, menjalankan `nginx -t`, lalu `systemctl reload nginx`. Untuk melepasnya:
+`deploy/install-nginx.sh --uninstall`.
+
+> **Penting — kenapa SNIPPET, bukan `server {}` baru.** Vhost `default` sudah memegang
+> `listen 80 default_server`. Membuat blok `server {}` baru dengan `server_name _` pada port yang
+> sama membuat nginx menuliskan `conflicting server name "_" ... ignored` dan **mengabaikan**
+> blok itu — `/dotbox/` lalu balas 404. Ini sudah direproduksi; karena itu rute dotbox
+> disisipkan ke dalam `server default` lewat `include`. Jangan mengubah rute menjadi `location /`
+> di dalam blok tersendiri tanpa persetujuan: akar situs dipakai layanan lain.
+>
+> **Bila nginx -t gagal:** skrip berhenti **tanpa** reload (server tetap melayani konfigurasi
+> lama). Perbaiki berkasnya lalu ulangi. Cadangan `default` asli ada di
+> `/etc/nginx/sites-available/default.dotbox-backup-*`.
 
 ---
 
@@ -118,29 +121,44 @@ deploy/publish.sh --rollback    # kembali ke rilis sebelumnya (atomik)
 deploy/publish.sh --verify      # konfirmasi rilis hasil rollback sehat
 ```
 
-Bila bahkan rollback gagal dan situs harus dimatikan sementara:
+Bila bahkan rollback gagal dan rute harus dimatikan sementara:
 
 ```bash
-ssh -F "$SSHCFG" aidev '
-  rm -f /etc/nginx/sites-enabled/dotbox.conf
-  nginx -t && systemctl reload nginx && echo "vhost dotbox dimatikan"
-'
+deploy/install-nginx.sh --uninstall    # lepas include + reload, default tetap jalan
 ```
 
 ---
 
-## 6. Pemantauan cepat
+## 6. Pemantauan (sudah terpasang: cron tiap 5 menit)
+
+Pemantauan dipasang dengan satu perintah (idempoten):
 
 ```bash
-# galat nginx terbaru
-ssh -F "$SSHCFG" aidev 'tail -n 40 /var/log/nginx/error.log'
-
-# ruang disk (server ini ~87% terpakai — pantau)
-ssh -F "$SSHCFG" aidev 'df -h /'
-
-# hapus rilis lama yang sudah tidak terpakai (setelah yakin)
-ssh -F "$SSHCFG" aidev 'ls -1 /var/www/dotbox/releases'
+deploy/install-monitor.sh              # pasang cron /etc/cron.d/dotbox-monitor
+deploy/install-monitor.sh --uninstall  # lepas
 ```
+
+Yang diperiksa tiap 5 menit: nginx hidup, symlink rilis valid + 6 berkas lengkap, HTTP
+`/dotbox/` = 200, dan `/dotbox/health` = 200. Hasil ditulis satu baris per pemeriksaan ke
+`/var/log/dotbox/health.log`.
+
+```bash
+# ringkasan + 20 baris log terakhir + pemeriksaan langsung sekarang
+dotbox-monitor --status
+# hanya memeriksa sekarang, cetak, tanpa tulis log
+dotbox-monitor --check
+# hitung kegagalan di seluruh log
+grep -c ' GAGAL ' /var/log/dotbox/health.log
+
+# galat nginx terbaru
+tail -n 40 /var/log/nginx/error.log
+# ruang disk (server ini ~87% terpakai — pantau)
+df -h /
+```
+
+> **Catatan alerting.** Cron ini mencatat, bukan mengirim notifikasi (belum ada kanal
+> alerting/email yang disetujui). Untuk integrasi alert, jalankan `dotbox-monitor` dan
+> periksa kode keluarnya (0 = semua OK, >0 = ada kegagalan).
 
 ---
 
