@@ -43,23 +43,44 @@ function ambilFungsi(sumber, namaFungsi) {
    Bagian 1 — penjadwalan AI
    ============================================================ */
 
-test('script.js punya 3 jalur penjadwal setTimeout(() => makeAIMove())', () => {
-    const jalur = nomorBaris().filter(({ t }) =>
+/* DIPERBARUI (P1 terpasang): tiga jalur `setTimeout(() => makeAIMove())` lama
+   (181, 594, 631) dan pembungkus `setTimeout(() => executeAIMove())` (724)
+   SUDAH diganti `turnQueue.schedule(...)`. Assertion lama mengunci bug yang
+   kini hilang, jadi test ini sekarang menuntut pola BARU dan menolak pola lama.
+   Bukti lama yang mengklaim 181/594/631/724 tersimpan di docs/bukti/*;
+   kontrak wiring penuh ada di test/p1-wiring.test.js. */
+test('script.js tidak lagi memakai setTimeout lepas untuk giliran AI (P1 terpasang)', () => {
+    const jalurLama = nomorBaris().filter(({ t }) =>
         /setTimeout\(\s*\(\)\s*=>\s*makeAIMove\(\)/.test(t));
-    // Nilai harfiah, diverifikasi lewat reproduksi: 181, 594, 631.
-    assert.deepStrictEqual(jalur.map((x) => x.n), [181, 594, 631]);
-});
+    assert.deepStrictEqual(jalurLama.map((x) => x.n), [],
+        'semua jalur giliran AI harus lewat turnQueue.schedule(makeAIMove, …)');
 
-test('makeAIMove membungkus executeAIMove dalam setTimeout (1 tempat)', () => {
-    const pembungkus = nomorBaris().filter(({ t }) =>
+    const pembungkusLama = nomorBaris().filter(({ t }) =>
         /setTimeout\(\s*\(\)\s*=>\s*executeAIMove\(\)/.test(t));
-    assert.deepStrictEqual(pembungkus.map((x) => x.n), [724]);
+    assert.deepStrictEqual(pembungkusLama.map((x) => x.n), [],
+        'makeAIMove harus memakai turnQueue.schedule(executeAIMove, 300)');
+
+    for (const { t: baris } of nomorBaris()) {
+        if (/makeAIMove|executeAIMove/.test(baris) && /setTimeout/.test(baris)) {
+            assert.fail(`baris masih memakai setTimeout untuk giliran AI: ${baris.trim()}`);
+        }
+    }
 });
 
-test('aiMoveTimeout hanya dideklarasikan dan tidak pernah dipakai', () => {
+test('script.js memakai turnQueue.schedule di semua jalur giliran AI', () => {
+    const jalurBaru = nomorBaris().filter(({ t }) =>
+        /turnQueue\.schedule\(\s*makeAIMove/.test(t));
+    assert.strictEqual(jalurBaru.length, 4,
+        'harus ada 4 jalur turnQueue.schedule(makeAIMove, …) (init, kotak, ganti giliran, muat)');
+    const pembungkus = nomorBaris().filter(({ t }) =>
+        /turnQueue\.schedule\(\s*executeAIMove/.test(t));
+    assert.strictEqual(pembungkus.length, 1, 'makeAIMove = 1 turnQueue.schedule(executeAIMove, 300)');
+});
+
+test('aiMoveTimeout sudah dihapus (digantikan turnQueue)', () => {
     const kemunculan = nomorBaris().filter(({ t }) => /aiMoveTimeout/.test(t));
-    assert.deepStrictEqual(kemunculan.map((x) => x.n), [720],
-        'aiMoveTimeout harus tepat satu kemunculan (deklarasi)');
+    assert.deepStrictEqual(kemunculan.map((x) => x.n), [],
+        'variabel mati aiMoveTimeout harus hilang setelah P1 terpasang');
 });
 
 /* ============================================================

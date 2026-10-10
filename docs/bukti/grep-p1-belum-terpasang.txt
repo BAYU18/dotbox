@@ -1,0 +1,32 @@
+# Bukti QA — suite hijau ≠ P1 (turn-queue) sudah terpasang
+
+Diambil di worktree `20261010-214601` (branch `babd/20261010-214601`).
+Keluaran mentah `node --test` polos: lihat `docs/bukti/node-test-polos-qa.txt` (52/52 pass, exit=0).
+
+## grep bukti produksi BELUM memakai P1
+
+`script.js`:
+```
+181:        setTimeout(() => makeAIMove(), 500);
+594:            setTimeout(() => makeAIMove(), 400);
+631:        setTimeout(() => makeAIMove(), 400);
+720:let aiMoveTimeout = null;
+722:function makeAIMove() {
+```
+Jumlah `setTimeout(() => makeAIMove()` = 3. Tidak ada referensi `turnQueue` / `TurnQueue` di `script.js`.
+
+`index.html`:
+```
+117:    <script src="rules.js"></script>
+118:    <script src="ai-engine.js"></script>
+119:    <script src="script.js"></script>
+```
+`turn-queue.js` TIDAK dimuat (grep `turn-queue` di index.html = 0 hit).
+
+## Kesimpulan
+
+- 52/52 hijau itu nyata, tapi tetap hijau meski `script.js` belum memakai `turnQueue`
+  dan `index.html` belum memuat `turn-queue.js` → P1 (integrasi produksi) BELUM terpasang.
+- Test yang hijau saat ini menguji `turn-queue.js` sebagai modul terpisah, bukan wiring produksinya.
+- Gap QA: belum ada test yang menuntut `script.js` memakai `turnQueue` sebagai satu-satunya
+  penjadwal AI, dan `index.html` memuat `turn-queue.js` sebelum `script.js`.
