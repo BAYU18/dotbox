@@ -5,7 +5,9 @@
    =================================== */
 
 // ============ GAME STATE ============
-const gameState = {
+// `let` (bukan `const`) supaya modul bisa dibangun ulang dari `Rules.createBoard`
+// dan ditimpa dengan `_mutableState = Object.assign(_mutableState, ...)`.
+let state = {
     config: {
         gridSize: 5,
         totalPlayers: 2,
@@ -26,6 +28,19 @@ const gameState = {
     isReplayPlaying: false,
     replayTimeout: null
 };
+
+/* Alias historis: nama yang dipakai di seluruh berkas ini dan di test.
+   Satu objek, dua nama — tidak ada state kedua. */
+const _mutableState = state;
+const gameState = _mutableState;
+
+// ============ ATURAN (SEAM TUNGGAL) ============
+// Semua perhitungan aturan kotak didelegasikan ke modul `rules.js` (ADR-0001).
+// Di browser `Rules` datang dari <script src="rules.js">; di Node, dari require.
+if (typeof globalThis !== 'undefined' && !globalThis.Rules) {
+    globalThis.Rules = require('./rules.js');
+}
+const Rules = globalThis.Rules;
 
 // AI Engine instance
 let aiEngine = null;
@@ -510,8 +525,18 @@ function getDistanceToLine(px, py, start, end) {
 // ============ GAME LOGIC ============
 function makeMove(type, row, col) {
     const currentPlayer = gameState.currentPlayerIndex;
-    
-    // Validate move
+
+    // Validate move. Guard batas dipakai LEBIH DULU supaya indeks di luar
+    // papan tidak pernah menyentuh array (sebelumnya `edges.horizontal[row][col]`
+    // bisa melempar TypeError) dan supaya `Rules.applyMove` tidak melempar
+    // RangeError di tengah makeMove (dulu kotak sudah diklaim padahal fungsi
+    // keluar lewat exception -> riwayat & giliran tidak sinkron).
+    const move = { type, row, col };
+    if (!Rules.isMoveInBounds(gameState, move)) {
+        showToast('Garis di luar papan!');
+        return false;
+    }
+
     if (type === 'horizontal' && gameState.edges.horizontal[row][col].owner !== null) {
         showToast('Garis sudah ada!');
         return false;
@@ -521,25 +546,22 @@ function makeMove(type, row, col) {
         return false;
     }
     
-    // Record and apply move
-    const move = {
+    // Record the move (riwayat untuk replay)
+    const record = {
         type,
         row,
         col,
         player: currentPlayer,
         timestamp: Date.now()
     };
-    gameState.moveHistory.push(move);
-    
-    if (type === 'horizontal') {
-        gameState.edges.horizontal[row][col].owner = currentPlayer;
-    } else {
-        gameState.edges.vertical[row][col].owner = currentPlayer;
-    }
-    
+    gameState.moveHistory.push(record);
+
     playSound('line');
-    
-    // Check for completed boxes
+
+    // Satu-satunya penulis papan adalah `Rules.applyMove` (ADR-0001).
+    // JANGAN menulis edge secara langsung di sini: kalau edge sudah terpasang
+    // sebelum applyMove dipanggil, applyMove melihat `owner !== null` dan
+    // mengembalikan `boxesGained: []` -> kotak tidak pernah diklaim.
     const completedBoxes = checkBoxCompletion(type, row, col);
     
     drawBoard();
@@ -579,47 +601,19 @@ function makeMove(type, row, col) {
 }
 
 function checkBoxCompletion(type, row, col) {
-    const gridSize = gameState.config.gridSize;
-    const completedBoxes = [];
-    
-    if (type === 'horizontal') {
-        if (row > 0 && isBoxComplete(row - 1, col)) {
-            if (gameState.boxes[row - 1][col].owner === null) {
-                gameState.boxes[row - 1][col].owner = gameState.currentPlayerIndex;
-                completedBoxes.push({ row: row - 1, col });
-            }
-        }
-        if (row < gridSize - 1 && isBoxComplete(row, col)) {
-            if (gameState.boxes[row][col].owner === null) {
-                gameState.boxes[row][col].owner = gameState.currentPlayerIndex;
-                completedBoxes.push({ row, col });
-            }
-        }
-    } else {
-        if (col > 0 && isBoxComplete(row, col - 1)) {
-            if (gameState.boxes[row][col - 1].owner === null) {
-                gameState.boxes[row][col - 1].owner = gameState.currentPlayerIndex;
-                completedBoxes.push({ row, col: col - 1 });
-            }
-        }
-        if (col < gridSize - 1 && isBoxComplete(row, col)) {
-            if (gameState.boxes[row][col].owner === null) {
-                gameState.boxes[row][col].owner = gameState.currentPlayerIndex;
-                completedBoxes.push({ row, col });
-            }
-        }
-    }
-    
-    return completedBoxes;
+    // Klaim kotak dihitung `Rules.applyMove`; di sini kita hanya menyelaraskan papan.
+    const hasil = Rules.applyMove(gameState, { type, row, col }, gameState.currentPlayerIndex);
+
+    _mutableState.edges.horizontal = hasil.state.edges.horizontal;
+    _mutableState.edges.vertical = hasil.state.edges.vertical;
+    _mutableState.boxes = hasil.state.boxes;
+    Object.assign(state, _mutableState);
+
+    return hasil.boxesGained;
 }
 
 function isBoxComplete(row, col) {
-    const top = gameState.edges.horizontal[row][col];
-    const bottom = gameState.edges.horizontal[row + 1][col];
-    const left = gameState.edges.vertical[row][col];
-    const right = gameState.edges.vertical[row][col + 1];
-    
-    return top.owner !== null && bottom.owner !== null && left.owner !== null && right.owner !== null;
+    return Rules.isBoxComplete(gameState, row, col);
 }
 
 function switchTurn() {
@@ -650,32 +644,17 @@ function highlightBox(row, col) {
 }
 
 function updateScores() {
-    gameState.scores = gameState.players.map(() => 0);
-    const gridSize = gameState.config.gridSize;
-    
-    for (let row = 0; row < gridSize - 1; row++) {
-        for (let col = 0; col < gridSize - 1; col++) {
-            if (gameState.boxes[row][col].owner !== null) {
-                gameState.scores[gameState.boxes[row][col].owner]++;
-            }
-        }
-    }
+    gameState.scores = Rules.score(gameState, gameState.players.length);
 }
 
 function isGameOver() {
-    const gridSize = gameState.config.gridSize;
-    const totalBoxes = (gridSize - 1) * (gridSize - 1);
-    let filledBoxes = 0;
-    
-    for (let row = 0; row < gridSize - 1; row++) {
-        for (let col = 0; col < gridSize - 1; col++) {
-            if (gameState.boxes[row][col].owner !== null) {
-                filledBoxes++;
-            }
-        }
-    }
-    
-    return filledBoxes === totalBoxes;
+    const totalBoxes = Rules.totalBoxes(gameState);
+    // Jumlahkan kotak SEMUA pemain. Versi lama memakai `Rules.score(gameState, 1)[0]`
+    // yang hanya menghitung kotak pemain 0 -> permainan tidak pernah berakhir bila
+    // pemain lain memiliki kotak.
+    const terisi = Rules.score(gameState, gameState.players.length)
+        .reduce((jumlah, kotak) => jumlah + kotak, 0);
+    return terisi === totalBoxes;
 }
 
 function endGame() {
@@ -869,11 +848,14 @@ function startReplay() {
 }
 
 function replayStep(stepIndex) {
+    // Simpan riwayat SEBELUM reset: `resetBoardOnly()` mengosongkan moveHistory,
+    // jadi membacanya setelah reset membuat replay tidak pernah memutar langkah apa pun.
+    const riwayat = gameState.moveHistory.slice();
     resetBoardOnly();
-    
-    for (let i = 0; i <= stepIndex && i < gameState.moveHistory.length; i++) {
-        const move = gameState.moveHistory[i];
-        replayMove(move);
+    gameState.moveHistory = riwayat;
+
+    for (let i = 0; i <= stepIndex && i < riwayat.length; i++) {
+        replayMove(riwayat[i]);
     }
     
     updateReplayStep();
@@ -886,8 +868,18 @@ function replayMove(move) {
     } else {
         gameState.edges.vertical[move.row][move.col].owner = move.player;
     }
-    
-    checkBoxCompletion(move.type, move.row, move.col);
+
+    // Klaim kotak dihitung ulang langsung dari papan (bukan lewat Rules.applyMove,
+    // karena edge SUDAH ditulis di atas -> applyMove akan melihat `owner !== null`
+    // dan mengembalikan `boxesGained: []` sehingga kotak tak pernah diklaim saat replay).
+    const pemilik = move.player;
+    for (let r = 0; r < gameState.boxes.length; r++) {
+        for (let c = 0; c < gameState.boxes[r].length; c++) {
+            if (gameState.boxes[r][c].owner === null && Rules.isBoxComplete(gameState, r, c)) {
+                gameState.boxes[r][c].owner = pemilik;
+            }
+        }
+    }
 }
 
 function toggleReplayPlay() {
