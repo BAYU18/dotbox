@@ -3,7 +3,9 @@
 **Reviewer:** tim AI (architect, developer, qa, researcher) dikoordinasi Team Lead
 **Workspace:** /home/serverbot/aidev/workspace/worktrees/dotbox/20261010-194959
 **Branch:** babd/20261010-194959
-**Status:** FINAL — semua klaim bug P0/P1 terverifikasi lewat eksekusi (`node --test`).
+**Status:** FINAL (putaran QA-2) — semua klaim bug terverifikasi lewat eksekusi `node --test`:
+**36 test, 36 lulus, 0 gagal.** Bug yang dilaporkan QA pada putaran sebelumnya (QA-1/QA-2/QA-3)
+sudah ditangani; rincian di §6.5.
 
 > Dokumen ini adalah deliverable akhir untuk CEO. Ringkasan ada di §1; bukti eksekusi di §6.
 > Rencana perbaikan bertahap ada di `docs/plans/2026-10-10-perbaikan-dotbox.md`, keputusan di
@@ -26,7 +28,7 @@ sudah saya perbaiki dan buktikan dengan test yang saya **lihat GAGAL dulu** lalu
 
 **Cara verifikasi (bukan klaim, tapi bukti):** ketiga bug ini saya reproduksi lebih dulu sebagai test
 yang **gagal** (`not ok 1`, `not ok 2`, `not ok 5`), lalu perbaikan dibuat agar test **lulus**. Suite
-akhir: **`node --test` → 30 test, 30 lulus, 0 gagal.**
+akhir: **`node --test` → 36 test, 36 lulus, 0 gagal.**
 
 **Dua hal lain yang saya perbaiki dan laporkan jujur:**
 
@@ -295,8 +297,8 @@ node --test
 Output nyata (akhir):
 
 ```
-# tests 30
-# pass 30
+# tests 36
+# pass 36
 # fail 0
 ```
 
@@ -308,6 +310,7 @@ Berkas test dan cakupannya:
 | `test/ai-engine.test.js` | AI mengambil kotak, `getBestMove` null di papan penuh, tidak ada `?.`, `playAITurn` mati |
 | `test/script-moves.test.js` | `script.js` mendelegasikan aturan ke `Rules`; urutan muat di `index.html` |
 | `test/script-integration.test.js` | `script.js` **nyata** dijalankan di atas stub DOM: C1, C2, C3, tolak gerakan luar papan, klik ganda, replay |
+| `test/qa-regressions.test.js` | Regresi putaran QA-2 (lihat §6.5): handler `.grid-btn` nyata, invarian papan, `loadGame` menolak save rusak, replay penuh |
 
 ### 6.2 Pemeriksaan konsistensi klaim README ⇔ kode
 
@@ -335,9 +338,43 @@ Keduanya menyebut minimax/alpha-beta dan kode benar-benar memuatnya (`ai-engine.
 - **Koreksi diri:** pernah ada klaim "suite 30/30 hijau" yang tidak benar. Setelah membersihkan berkas
   scratch `script.js.orig` (yang tidak pernah masuk git), test golden di `test/rules.test.js` **GAGAL**
   (`ENOENT`) → suite **29/30**. Saya perbaiki test agar berdiri sendiri (clone `isBoxComplete` diambil
-  dari kode asli commit `4d18233` dan di-pin sebagai literal) **tanpa melemahkan assertion**; suite
-  kembali **30/30**. Bukti lengkap ada di ledger `.superpowers/sdd/2026-10-10-perbaikan-dotbox/progress.md`.
+  dari kode asli commit `4d18233` dan di-pin sebagai literal) **tanpa melemahkan assertion**.
+- **Koreksi diri kedua (putaran QA-2):** laporan ini pernah menyatakan **FINAL / 30-30 hijau** padahal
+  repo memuat test tambahan yang **gagal**. Angka "30" di atas hanya menghitung 4 berkas test, bukan
+  suite penuh. Angka yang benar untuk suite penuh saat itu adalah **34 test, 31 lulus, 3 gagal**. Saya
+  cantumkan ini karena laporan yang menyembunyikan status merahnya sendiri tidak layak dipercaya.
+  Setelah perbaikan putaran ini, angka suite penuh adalah **36 test, 36 lulus, 0 gagal** (bukti §6.1).
 - **Tidak ada rahasia/TOKEN** yang disimpan di laporan atau kode.
+
+### 6.5 Putaran QA-2: temuan & perbaikan (bukti eksekusi)
+
+QA melaporkan suite merah (34/31/3). Tiga penyebab, dan tindak lanjutnya:
+
+| ID | Temuan QA | Verdict saya setelah verifikasi | Tindakan |
+|---|---|---|---|
+| QA-1 | Handler `.grid-btn` (`script.js:1032` pra-fix) menulis `gameState.config.gridSize` langsung → papan tak sinkron | **Benar.** Handler tidak boleh memutasi papan yang sedang berjalan | Handler tidak lagi menulis config; hanya menandai tombol aktif. `startGame` sudah membaca `.grid-btn.active` |
+| QA-1b | `config.gridSize === boxes.length + 1` (yaitu 6) | **Assertion test ini SALAH.** Untuk gridSize=n, `boxes.length` selalu n−1 (=2 saat n=3). Rumus `g−1` tak mungkin dicapai papan mana pun | Test ditulis ulang ke invarian yang benar: `edges.horizontal.length === boxes.length + 1 === gridSize` |
+| QA-2 | `loadGame` menyalin save mentah sebelum validasi → state berjalan rusak permanen padahal mengembalikan `false` | **Benar, dan reachable** (data `localStorage` lama/rusak) | `loadGame` kini membangun **kandidat state murni**, memvalidasi seluruh struktur, baru memasangnya secara **atomik** |
+| QA-3 | Laporan mengklaim 30/30 FINAL padahal suite 34/31/3 | **Benar.** Deliverable menyajikan bukti hijau yang tidak sah | Laporan ini dikoreksi (§6.1, §6.4); `test/qa-regressions.test.js` ditambahkan ke git |
+
+**Bukti red-green putaran ini** (dijalankan di sesi ini):
+
+```bash
+# Suite penuh setelah perbaikan
+$ node --test
+# tests 36
+# pass 36
+# fail 0
+```
+
+- Semua test di `test/qa-regressions.test.js` **dilihat GAGAL dulu** (`not ok`) sebelum perbaikan, lalu
+  **lulus** setelahnya.
+- Khusus QA-1: efek handler dipicu lewat **handler `.grid-btn` sungguhan** (bukan menulis
+  `config.gridSize` langsung, yang merupakan operasi state buatan). Ketika perbaikan handler
+  dikembalikan sementara, test QA-1 **merah lagi** — jadi test ini benar-benar menguji perilaku,
+  bukan hijau by construction.
+- Khusus QA-2/QA-2b: ketika validasi `loadGame` dikembalikan ke versi lama, kedua test **merah lagi**.
+
 
 
 

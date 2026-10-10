@@ -769,43 +769,139 @@ function saveGame() {
     localStorage.setItem('dotsandboxes_current', JSON.stringify(saveData));
 }
 
+/* ============ VALIDASI DATA SIMPANAN ============
+   `loadGame` sebelumnya menyalin `saveData.*` apa adanya ke `gameState`.
+   Bila data rusak (skema lama, edit manual, penulisan sebagian), state
+   permainan yang sedang berjalan ikut rusak TANPA bisa dipulihkan, dan
+   `catch` yang menelan error membuat `loadGame()` mengembalikan `false`
+   seolah-olah tidak terjadi apa-apa. (QA-2.)
+
+   Aturan sekarang: bangun dulu seluruh state dari data simpanan ke kandidat
+   MURNI, validasi, baru pasang ke `gameState` secara atomik. Bila ada satu
+   saja yang tidak valid -> tolak, dan `gameState` tidak tersentuh. */
+
+const SAVE_KEYS = ['config', 'players', 'currentPlayerIndex', 'edges', 'boxes', 'scores', 'moveHistory', 'isGameOver'];
+
+function buatKandidatState(saveData) {
+    if (!saveData || typeof saveData !== 'object' || Array.isArray(saveData)) return null;
+
+    for (const key of SAVE_KEYS) {
+        if (!(key in saveData)) return null;
+    }
+
+    const { config, players, currentPlayerIndex, edges, boxes, scores, moveHistory, isGameOver } = saveData;
+
+    // --- config ---
+    if (!config || typeof config !== 'object') return null;
+    const gridSize = config.gridSize;
+    const totalPlayers = config.totalPlayers;
+    const aiCount = config.aiCount;
+    const aiDepth = config.aiDepth;
+    if (!Number.isInteger(gridSize) || gridSize < 2) return null;
+    if (!Number.isInteger(totalPlayers) || totalPlayers < 1 || totalPlayers > PLAYER_COLORS.length) return null;
+    if (!Number.isInteger(aiCount) || aiCount < 0 || aiCount >= totalPlayers) return null;
+    if (!Number.isInteger(aiDepth) || aiDepth < 1) return null;
+
+    // --- pemain ---
+    if (!Array.isArray(players) || players.length !== totalPlayers) return null;
+    const pemainValid = players.every((p, i) =>
+        p && typeof p === 'object' && typeof p.name === 'string' && typeof p.color === 'string' &&
+        (typeof p.isAI === 'boolean') && (p.id === undefined || p.id === i));
+    if (!pemainValid) return null;
+
+    // --- indeks giliran ---
+    if (!Number.isInteger(currentPlayerIndex) || currentPlayerIndex < 0 || currentPlayerIndex >= totalPlayers) return null;
+
+    // --- papan (edges) ---
+    if (!edges || typeof edges !== 'object' || !Array.isArray(edges.horizontal) || !Array.isArray(edges.vertical)) return null;
+    if (edges.horizontal.length !== gridSize) return null;
+    if (edges.vertical.length !== gridSize - 1) return null;
+
+    const ownerSah = (owner) => owner === null || (Number.isInteger(owner) && owner >= 0 && owner < totalPlayers);
+    const barisGarisSah = (baris, panjang) =>
+        Array.isArray(baris) && baris.length === panjang &&
+        baris.every((e) => e && typeof e === 'object' && ownerSah(e.owner));
+
+    if (!edges.horizontal.every((baris) => barisGarisSah(baris, gridSize - 1))) return null;
+    if (!edges.vertical.every((baris) => barisGarisSah(baris, gridSize))) return null;
+
+    // --- kotak ---
+    if (!Array.isArray(boxes) || boxes.length !== gridSize - 1) return null;
+    const barisBoxSah = (baris) =>
+        Array.isArray(baris) && baris.length === gridSize - 1 &&
+        baris.every((b) => b && typeof b === 'object' && ownerSah(b.owner));
+    if (!boxes.every(barisBoxSah)) return null;
+
+    // --- skor, riwayat, selesai ---
+    if (!Array.isArray(scores) || scores.length !== totalPlayers) return null;
+    if (!scores.every((s) => Number.isInteger(s) && s >= 0)) return null;
+    if (!Array.isArray(moveHistory)) return null;
+    if (typeof isGameOver !== 'boolean') return null;
+
+    // Kandidat murni: salinan siap dipasang ke gameState.
+    return {
+        config: { gridSize, totalPlayers, aiCount, aiDepth },
+        players: players.map((p, i) => ({ id: i, name: p.name, isAI: p.isAI, color: p.color })),
+        currentPlayerIndex,
+        edges: {
+            horizontal: edges.horizontal.map((baris) => baris.map((e) => ({ owner: e.owner }))),
+            vertical: edges.vertical.map((baris) => baris.map((e) => ({ owner: e.owner })))
+        },
+        boxes: boxes.map((baris) => baris.map((b) => ({ owner: b.owner }))),
+        scores: scores.slice(),
+        moveHistory: moveHistory.slice(),
+        isGameOver
+    };
+}
+
 function loadGame() {
     const saved = localStorage.getItem('dotsandboxes_current');
     if (!saved) return false;
-    
+
+    let saveData;
     try {
-        const saveData = JSON.parse(saved);
-        
-        gameState.config = saveData.config;
-        gameState.players = saveData.players;
-        gameState.currentPlayerIndex = saveData.currentPlayerIndex;
-        gameState.edges = saveData.edges;
-        gameState.boxes = saveData.boxes;
-        gameState.scores = saveData.scores;
-        gameState.moveHistory = saveData.moveHistory;
-        gameState.isGameOver = saveData.isGameOver;
-        gameState.isReplayMode = false;
-        
-        // Reinitialize AI engine
-        aiEngine = new AIEngine(gameState.config.aiDepth);
-        
-        setupCanvas();
-        drawBoard();
-        updateUI();
-        
-        document.getElementById('configMenu').classList.add('hidden');
-        document.getElementById('gameArea').classList.remove('hidden');
-        
-        if (gameState.isGameOver) {
-            endGame();
-        }
-        
-        showToast('Game dimuat dari save terakhir');
-        return true;
+        saveData = JSON.parse(saved);
     } catch (e) {
-        console.error('Failed to load game:', e);
+        // JSON rusak: bukan exception yang ditelan, tapi penolakan yang jelas.
+        console.error('Save tidak dapat di-parse sebagai JSON:', e.message);
         return false;
     }
+
+    // Validasi SELESAI sebelum menyentuh gameState (QA-2): tidak ada state
+    // setengah-termuat walau validasi gagal di tengah.
+    const kandidat = buatKandidatState(saveData);
+    if (!kandidat) {
+        console.error('Save ditolak: struktur data tidak valid');
+        return false;
+    }
+
+    // Pasang secara atomik setelah semua bagian terbukti sah.
+    gameState.config = kandidat.config;
+    gameState.players = kandidat.players;
+    gameState.currentPlayerIndex = kandidat.currentPlayerIndex;
+    gameState.edges = kandidat.edges;
+    gameState.boxes = kandidat.boxes;
+    gameState.scores = kandidat.scores;
+    gameState.moveHistory = kandidat.moveHistory;
+    gameState.isGameOver = kandidat.isGameOver;
+    gameState.isReplayMode = false;
+
+    // Reinitialize AI engine
+    aiEngine = new AIEngine(gameState.config.aiDepth);
+
+    setupCanvas();
+    drawBoard();
+    updateUI();
+
+    document.getElementById('configMenu').classList.add('hidden');
+    document.getElementById('gameArea').classList.remove('hidden');
+
+    if (gameState.isGameOver) {
+        endGame();
+    }
+
+    showToast('Game dimuat dari save terakhir');
+    return true;
 }
 
 function saveGameHistory() {
@@ -977,6 +1073,20 @@ function toggleDarkMode() {
 }
 
 // ============ EVENT LISTENERS ============
+/* Handler tombol `.grid-btn` HANYA mengubah PILIHAN ukuran grid di `configMenu`
+   sebelum permainan dimulai. Handler ini tidak boleh memutasi papan permainan
+   yang sedang berjalan.
+
+   Kenapa: `#configMenu` (index.html) hanya tampil saat tidak ada permainan aktif,
+   dan "Mulai Game" (startGame) selalu memanggil `initGame(config)` yang membangun
+   papan dari ukuran yang dipilih. Menulis `gameState.config.gridSize` di sini
+   (perilaku lama) melanggar invariant "gridSize == ukuran papan": bila grid
+   diubah lewat jalur mana pun saat permainan aktif, `edges`/`boxes` tetap ukuran
+   lama sementara `config.gridSize` sudah baru -> `drawBoxes` membaca
+   `dotPositions[row][col]` yang tidak ada -> TypeError. (QA-1.)
+
+   Kita hanya memperbarui tombol aktif. Ukuran yang dipakai untuk memulai
+   permainan dibaca langsung dari `.grid-btn.active` di startGame. */
 document.addEventListener('DOMContentLoaded', () => {
     if (localStorage.getItem('dotsandboxes_darkmode') === 'true') {
         document.body.classList.add('dark-mode');
@@ -1024,12 +1134,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Grid size buttons
+    // Grid size buttons: hanya menyimpan PILIHAN (tombol aktif), tidak
+    // menyentuh config/papan permainan yang sedang berjalan. Lihat catatan
+    // di atas `document.addEventListener('DOMContentLoaded', ...)` (QA-1).
     document.querySelectorAll('.grid-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.grid-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            gameState.config.gridSize = parseInt(btn.dataset.size);
         });
     });
     
