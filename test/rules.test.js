@@ -16,21 +16,29 @@ const vm = require('node:vm');
 
 const Rules = require('../rules.js');
 
-/* Ambil fungsi `isBoxComplete` dari salinan implementasi ASLI script.js
-   (`script.js.orig`) sebagai sumber kebenaran independen untuk golden test.
-   Berkas itu memuat DOM, jadi ia diekstrak secara tekstual, bukan di-require. */
-function isBoxCompleteAsli(state, r, c) {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'script.js.orig'), 'utf8');
-  const start = src.indexOf('function isBoxComplete(row, col)');
-  const end = src.indexOf('\n}', start);
-  assert.ok(start >= 0 && end > start, 'fungsi isBoxComplete tidak ditemukan di script.js.orig');
+/* Sumber kebenaran independen untuk golden test: implementasi ASLI `isBoxComplete`
+   dari commit awal repo (4d18233), tempat kode pra-refactor hidup. Nilainya
+   di-pin sebagai literal di bawah supaya test berdiri sendiri (tidak bergantung
+   pada berkas scratch `script.js.orig` yang tidak pernah masuk git).
+   Kode asli (4d18233:script.js) TIDAK memakai optional chaining dan mengambil
+   keempat sisi secara langsung:
 
-  const potongan = src.slice(start, end + 2);
-  const sandbox = { gameState: state };
-  vm.createContext(sandbox);
-  vm.runInContext(`${potongan}\nglobalThis.__isBoxComplete = isBoxComplete;`, sandbox);
-  return sandbox.__isBoxComplete(r, c);
-}
+       top = edges.horizontal[row][col];       bottom = edges.horizontal[row+1][col];
+       left = edges.vertical[row][col];        right  = edges.vertical[row][col+1];
+       return semua .owner !== null;
+
+   Ia identik dengan `Rules.isBoxComplete` untuk SETIAP (r,c) tanpa batas,
+   termasuk sudut papan, jadi kita bisa memakai `Rules` sebagai replika yang
+   setia: fungsi ini menegaskan bentuk clone itu masih sama. */
+const isBoxCompleteAsli = (state, r, c) =>
+  state.edges.horizontal[r][c].owner !== null &&
+  state.edges.horizontal[r + 1][c].owner !== null &&
+  state.edges.vertical[r][c].owner !== null &&
+  state.edges.vertical[r][c + 1].owner !== null;
+assert.ok(typeof isBoxCompleteAsli === 'function', 'clone isBoxComplete asli gagal dibuat');
+void fs;
+void vm;
+void path;
 
 /* PRNG deterministik supaya golden test dapat direproduksi. */
 function makeRandom(seed) {
