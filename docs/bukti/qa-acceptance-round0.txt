@@ -1,0 +1,17 @@
+=== SUITE PENERIMAAN QA — 2026-10-10T16:29:03Z ===
+(dijalankan saat Developer masih bekerja; P0 sudah mendarat, sisanya menyusul)
+
+not ok 8 - P2s-3: alasan penolakan bisa DIBEDAKAN: versi tak dikenal vs struktur tak valid
+not ok 10 - P3-1: index.html tidak lagi mematikan zoom (tanpa user-scalable=no & maximum-scale=1.0)
+not ok 11 - P3-2: setiap tombol ikon/replay punya aria-label tidak kosong
+not ok 12 - P3-3: style.css punya :focus-visible dan prefers-reduced-motion
+not ok 13 - P3-4: ada live region \#liveStatus dan diperbarui dari updateUI() dengan teks (tanpa emoji)
+not ok 14 - P5-1: DPR 2 -> bitmap = size*2, style CSS = size px
+not ok 15 - P5-2: konteks menerima setTransform(DPR,0,0,DPR,0,0)
+not ok 16 - P5-3: hit-test tetap benar di DPR 2 — klik pada posisi fisik yang sama memilih garis yang sama
+not ok 18 - P4-2: isi save terakhir SAMA dengan gameState terakhir (hemat I/O tidak boleh merusak data)
+not ok 19 - P4-3: ada penyelamat beforeunload yang menulis save (tidak kehilangan data saat tab ditutup)
+not ok 20 - P6-1: initGame tidak lagi menulis Box.edges (dead write hilang)
+# tests 21
+# pass 10
+# fail 11
