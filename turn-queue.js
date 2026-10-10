@@ -17,9 +17,10 @@
 
    Kontrak: SINGLE-SLOT, bukan antrian FIFO. `schedule` yang dipanggil dua
    kali MENGGANTI isi slot yang sama dan menghasilkan SATU eksekusi — niat
-   penulis lama di `script.js:723` ("Always reset at start - allow multiple
-   calls") adalah "yang terakhir menang". Nama historis "queue" dipertahankan
-   demi kesinambungan; perilakunya adalah penjadwal satu-slot.
+   penulis lama di `script.js:734` (dulu `:723`, sebelum P1; "Always reset at
+   start - allow multiple calls") adalah "yang terakhir menang". Nama historis
+   "queue" dipertahankan demi kesinambungan; perilakunya adalah penjadwal
+   satu-slot.
 
    Ketergantungan `schedule`/`cancel` disuntikkan (bukan memanggil
    setTimeout host langsung) supaya timer bisa "pending" secara deterministik

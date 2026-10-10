@@ -631,8 +631,10 @@ function makeMove(type, row, col) {
         playSound('box');
     }
     
-    saveGame();
-    
+    // ADR-0004: save TIDAK ditulis di sini. Ia ditulis di akhir giliran
+    // (akhir `updateUI()`), plus sekali lagi pada `beforeunload`. Alasan:
+    // satu langkah bisa memicu beberapa pembaruan internal (highlight, skor,
+    // giliran ekstra) dan menulis tiap kali adalah I/O sinkron yang sia-sia.
     if (isGameOver()) {
         endGame();
         return true;
@@ -773,6 +775,12 @@ function updateUI() {
             </div>
         `;
     }).join('');
+
+    // ADR-0004: akhir giliran adalah titik tulis save. `updateUI()` dipanggil
+    // setiap kali giliran/skor berubah, sehingga state yang tersimpan selalu
+    // state giliran yang konsisten. Nullable-safe untuk stub DOM test yang
+    // tidak punya localStorage.
+    if (typeof localStorage !== 'undefined' && localStorage) saveGame();
 
     // Pengumuman status untuk pembaca layar (P3). Nullable-safe: stub DOM test
     // lain dan lingkungan lama boleh tidak punya #liveStatus.
@@ -1193,6 +1201,18 @@ function resetBoardOnly() {
 }
 
 // ============ UTILITY FUNCTIONS ============
+
+/**
+ * Penyelamat ADR-0004: bila tab ditutup di antara dua akhir giliran, tulis
+ * save sekali lagi. Tanpa ini, aturan "tidak kehilangan data" tidak terpenuhi.
+ */
+function pasangPenyelamatSebelumKeluar() {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    window.addEventListener('beforeunload', () => {
+        if (gameState) saveGame();
+    });
+}
+
 function showToast(message) {
     const toast = document.getElementById('toast');
     toast.textContent = message;
@@ -1227,6 +1247,9 @@ function toggleDarkMode() {
    Kita hanya memperbarui tombol aktif. Ukuran yang dipakai untuk memulai
    permainan dibaca langsung dari `.grid-btn.active` di startGame. */
 document.addEventListener('DOMContentLoaded', () => {
+    // ADR-0004: penyelamat sebelum tab ditutup (lihat definisinya di atas).
+    pasangPenyelamatSebelumKeluar();
+
     if (localStorage.getItem('dotsandboxes_darkmode') === 'true') {
         document.body.classList.add('dark-mode');
         document.getElementById('darkModeToggle').textContent = '☀️';
