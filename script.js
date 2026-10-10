@@ -42,6 +42,16 @@ if (typeof globalThis !== 'undefined' && !globalThis.Rules) {
 }
 const Rules = globalThis.Rules;
 
+// ============ PENJADWAL GILIRAN AI (SEAM TUNGGAL) ============
+// Satu-satunya tempat giliran AI tertunda dijadwalkan/dibatalkan (P1).
+// Di browser `TurnQueue` datang dari <script src="turn-queue.js"> (dimuat
+// SEBELUM script.js); di Node, dari require.
+if (typeof globalThis !== 'undefined' && !globalThis.TurnQueue) {
+    globalThis.TurnQueue = require('./turn-queue.js');
+}
+const { createTurnQueue, shouldScheduleAI } = globalThis.TurnQueue;
+const turnQueue = createTurnQueue();
+
 // AI Engine instance
 let aiEngine = null;
 
@@ -178,7 +188,7 @@ function initGame(config) {
     
     // Start AI turn if needed
     if (gameState.players[0].isAI) {
-        setTimeout(() => makeAIMove(), 500);
+        if (shouldScheduleAI(gameState)) turnQueue.schedule(makeAIMove, 500);
     }
 }
 
@@ -591,7 +601,7 @@ function makeMove(type, row, col) {
         
         // If it's AI's turn, AI should make another move after a delay
         if (gameState.players[gameState.currentPlayerIndex].isAI) {
-            setTimeout(() => makeAIMove(), 400);
+            if (shouldScheduleAI(gameState)) turnQueue.schedule(makeAIMove, 400);
         }
         return true;
     }
@@ -628,7 +638,7 @@ function switchTurn() {
     
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     if (currentPlayer.isAI) {
-        setTimeout(() => makeAIMove(), 400);
+        if (shouldScheduleAI(gameState)) turnQueue.schedule(makeAIMove, 400);
     }
 }
 
@@ -717,11 +727,11 @@ function updateUI() {
 }
 
 // ============ AI ============
-let aiMoveTimeout = null;
-
 function makeAIMove() {
-    // Always reset at start - allow multiple calls
-    setTimeout(() => executeAIMove(), 300);
+    // Satu-satunya penundaan eksekusi AI. Penjadwal satu-slot: pemanggilan
+    // beruntun MENGGANTI giliran tertunda sebelumnya (yang terakhir menang),
+    // sehingga AI tidak pernah bergerak dua kali untuk satu giliran logis.
+    turnQueue.schedule(executeAIMove, 300);
 }
 
 function executeAIMove() {
@@ -753,8 +763,17 @@ function executeAIMove() {
 }
 
 // ============ STORAGE ============
+/* Versi skema save yang dikenal. Save TANPA `version` dianggap v1
+   (warisan, keputusan Q1-A); versi lain/rusak DITOLAK, tidak ditebak. */
+const SCHEMA_VERSION = 1;
+function versiDikenal(version) {
+    if (version === undefined) return true; // save warisan -> diperlakukan v1
+    return Number.isInteger(version) && version === SCHEMA_VERSION;
+}
+
 function saveGame() {
     const saveData = {
+        version: SCHEMA_VERSION,
         config: gameState.config,
         players: gameState.players,
         currentPlayerIndex: gameState.currentPlayerIndex,
@@ -784,6 +803,9 @@ const SAVE_KEYS = ['config', 'players', 'currentPlayerIndex', 'edges', 'boxes', 
 
 function buatKandidatState(saveData) {
     if (!saveData || typeof saveData !== 'object' || Array.isArray(saveData)) return null;
+
+    // --- versi skema ---
+    if (!versiDikenal(saveData.version)) return null;
 
     for (const key of SAVE_KEYS) {
         if (!(key in saveData)) return null;
@@ -858,6 +880,10 @@ function loadGame() {
     const saved = localStorage.getItem('dotsandboxes_current');
     if (!saved) return false;
 
+    // Buang giliran AI tertunda dari papan LAMA sebelum menyentuh state:
+    // mencegah eksekusi basi bila muat gagal atau papan berbeda.
+    turnQueue.clear();
+
     let saveData;
     try {
         saveData = JSON.parse(saved);
@@ -899,6 +925,12 @@ function loadGame() {
     if (gameState.isGameOver) {
         endGame();
     }
+
+    // R5: bila giliran AI yang BARU dimuat, jadwalkan ulang. `turnQueue.clear()`
+    // di awal loadGame sudah membuang giliran basi dari papan lama; di sini kita
+    // memasang giliran baru untuk state yang baru dipasang.
+    // Urutan: clear() -> pasang state -> schedule().
+    if (shouldScheduleAI(gameState)) turnQueue.schedule(makeAIMove, 400);
 
     showToast('Game dimuat dari save terakhir');
     return true;
@@ -1027,6 +1059,10 @@ function closeReplay() {
 
 // ============ RESET FUNCTIONS ============
 function resetBoardOnly() {
+    // Papan dibangun ulang: buang giliran AI tertunda agar tidak ada eksekusi
+    // basi yang berjalan di papan yang sudah berbeda (P1).
+    turnQueue.clear();
+
     const gridSize = gameState.config.gridSize;
     
     gameState.edges.horizontal = Array(gridSize).fill(null).map(() => 

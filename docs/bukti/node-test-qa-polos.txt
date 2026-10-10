@@ -1,0 +1,294 @@
+TAP version 13
+# Subtest: getBestMove mengembalikan null saat papan penuh
+ok 1 - getBestMove mengembalikan null saat papan penuh
+  ---
+  duration_ms: 3.261005
+  ...
+# Subtest: AI mengambil kotak yang bisa diselesaikan
+ok 2 - AI mengambil kotak yang bisa diselesaikan
+  ---
+  duration_ms: 62.646858
+  ...
+# Subtest: simulateMove memakai aturan Rules (memasang garis + mengklaim kotak)
+ok 3 - simulateMove memakai aturan Rules (memasang garis + mengklaim kotak)
+  ---
+  duration_ms: 0.390036
+  ...
+# Subtest: playAITurn (jalur lama) tidak lagi ada, atau tidak berisi loop tak terbatas
+ok 4 - playAITurn (jalur lama) tidak lagi ada, atau tidak berisi loop tak terbatas
+  ---
+  duration_ms: 45.04181
+  ...
+# Subtest: tidak ada pola optional-chaining `?.` di ai-engine.js
+ok 5 - tidak ada pola optional-chaining `?.` di ai-engine.js
+  ---
+  duration_ms: 3.500165
+  ...
+# Subtest: script.js tidak lagi memakai setTimeout lepas untuk giliran AI (P1 terpasang)
+ok 6 - script.js tidak lagi memakai setTimeout lepas untuk giliran AI (P1 terpasang)
+  ---
+  duration_ms: 7.134431
+  ...
+# Subtest: script.js memakai turnQueue.schedule di semua jalur giliran AI
+ok 7 - script.js memakai turnQueue.schedule di semua jalur giliran AI
+  ---
+  duration_ms: 3.666747
+  ...
+# Subtest: aiMoveTimeout sudah dihapus (digantikan turnQueue)
+ok 8 - aiMoveTimeout sudah dihapus (digantikan turnQueue)
+  ---
+  duration_ms: 0.589073
+  ...
+# Subtest: Rules.createBoard menghasilkan Box TANPA field edges
+ok 9 - Rules.createBoard menghasilkan Box TANPA field edges
+  ---
+  duration_ms: 4.728995
+  ...
+# Subtest: inisialisasi script.js menulis Box.edges yang tidak pernah dibaca (dead write)
+ok 10 - inisialisasi script.js menulis Box.edges yang tidak pernah dibaca (dead write)
+  ---
+  duration_ms: 3.650786
+  ...
+# Subtest: getBestMove()==null pada giliran AI: tidak ada fallback, giliran menggantung
+ok 11 - getBestMove()==null pada giliran AI: tidak ada fallback, giliran menggantung
+  ---
+  duration_ms: 4.565668
+  ...
+# Subtest: kontra-bukti: getBestMove() valid tetap diteruskan ke makeMove
+ok 12 - kontra-bukti: getBestMove() valid tetap diteruskan ke makeMove
+  ---
+  duration_ms: 9.368766
+  ...
+# Subtest: A: giliran AI dijadwalkan lewat turnQueue produksi, bukan setTimeout lepas
+ok 13 - A: giliran AI dijadwalkan lewat turnQueue produksi, bukan setTimeout lepas
+  ---
+  duration_ms: 14.16641
+  ...
+# Subtest: B: script.js tidak lagi memakai setTimeout(() => makeAIMove) atau aiMoveTimeout
+ok 14 - B: script.js tidak lagi memakai setTimeout(() => makeAIMove) atau aiMoveTimeout
+  ---
+  duration_ms: 3.88831
+  ...
+# Subtest: C: index.html memuat turn-queue.js sebelum script.js
+ok 15 - C: index.html memuat turn-queue.js sebelum script.js
+  ---
+  duration_ms: 0.397994
+  ...
+# Subtest: D: resetBoardOnly() membatalkan giliran AI tertunda
+ok 16 - D: resetBoardOnly() membatalkan giliran AI tertunda
+  ---
+  duration_ms: 5.152853
+  ...
+# Save ditolak: struktur data tidak valid
+# Save ditolak: struktur data tidak valid
+# Subtest: QA-1: memicu handler .grid-btn nyata harus menjaga state konsisten & permainan tetap jalan
+ok 17 - QA-1: memicu handler .grid-btn nyata harus menjaga state konsisten & permainan tetap jalan
+  ---
+  duration_ms: 11.836701
+  ...
+# Subtest: QA-1b: startGame membaca ukuran dari tombol aktif dan membangun papan yang koheren
+ok 18 - QA-1b: startGame membaca ukuran dari tombol aktif dan membangun papan yang koheren
+  ---
+  duration_ms: 4.86042
+  ...
+# Subtest: QA-1c: initGame selalu membangun papan yang koheren dengan gridSize (invarian inti)
+ok 19 - QA-1c: initGame selalu membangun papan yang koheren dengan gridSize (invarian inti)
+  ---
+  duration_ms: 7.309364
+  ...
+# Subtest: QA-2: loadGame harus menolak data simpanan tak valid tanpa merusak state berjalan
+ok 20 - QA-2: loadGame harus menolak data simpanan tak valid tanpa merusak state berjalan
+  ---
+  duration_ms: 5.5449
+  ...
+# Subtest: QA-2b: loadGame menolak save dengan bentuk struktur salah tanpa mengubah state
+ok 21 - QA-2b: loadGame menolak save dengan bentuk struktur salah tanpa mengubah state
+  ---
+  duration_ms: 3.27907
+  ...
+# Subtest: QA-3: replay penuh mereproduksi papan akhir yang sama untuk 2 permainan acak-ber-seed
+ok 22 - QA-3: replay penuh mereproduksi papan akhir yang sama untuk 2 permainan acak-ber-seed
+  ---
+  duration_ms: 12.643031
+  ...
+# Subtest: papan baru berbentuk State kanonik dan semua owner null
+ok 23 - papan baru berbentuk State kanonik dan semua owner null
+  ---
+  duration_ms: 3.325691
+  ...
+# Subtest: papan kosong 3x3 tidak punya kotak selesai
+ok 24 - papan kosong 3x3 tidak punya kotak selesai
+  ---
+  duration_ms: 0.444656
+  ...
+# Subtest: isBoxComplete menolak index di luar papan, bukan membaca index tak ada
+ok 25 - isBoxComplete menolak index di luar papan, bukan membaca index tak ada
+  ---
+  duration_ms: 0.244688
+  ...
+# Subtest: empat garis mengklaim kotak dan memberi giliran ekstra
+ok 26 - empat garis mengklaim kotak dan memberi giliran ekstra
+  ---
+  duration_ms: 6.793317
+  ...
+# Subtest: applyMove tidak mengubah state input (purity)
+ok 27 - applyMove tidak mengubah state input (purity)
+  ---
+  duration_ms: 0.574585
+  ...
+# Subtest: move tidak menambah kotak => boxesGained kosong dan extraTurn false
+ok 28 - move tidak menambah kotak => boxesGained kosong dan extraTurn false
+  ---
+  duration_ms: 0.370092
+  ...
+# Subtest: satu gerakan bisa mengklaim dua kotak sekaligus
+ok 29 - satu gerakan bisa mengklaim dua kotak sekaligus
+  ---
+  duration_ms: 0.834237
+  ...
+# Subtest: availableMoves papan kosong 3x3 = 6 horizontal + 6 vertikal
+ok 30 - availableMoves papan kosong 3x3 = 6 horizontal + 6 vertikal
+  ---
+  duration_ms: 0.469693
+  ...
+# Subtest: availableMoves tidak memuat garis yang sudah dimiliki
+ok 31 - availableMoves tidak memuat garis yang sudah dimiliki
+  ---
+  duration_ms: 0.527888
+  ...
+# Subtest: papan penuh => availableMoves kosong dan skor menjumlah ke total kotak
+ok 32 - papan penuh => availableMoves kosong dan skor menjumlah ke total kotak
+  ---
+  duration_ms: 0.813617
+  ...
+# Subtest: golden: Rules.isBoxComplete identik dengan isBoxComplete asli script.js atas 400 state acak
+ok 33 - golden: Rules.isBoxComplete identik dengan isBoxComplete asli script.js atas 400 state acak
+  ---
+  duration_ms: 35.82652
+  ...
+# Subtest: golden: hasil akhir Rules.applyMove identik dengan logika turn script.js asli
+ok 34 - golden: hasil akhir Rules.applyMove identik dengan logika turn script.js asli
+  ---
+  duration_ms: 68.416034
+  ...
+# Subtest: score menghitung ulang dari papan, bukan dari akumulasi
+ok 35 - score menghitung ulang dari papan, bukan dari akumulasi
+  ---
+  duration_ms: 3.457695
+  ...
+# Subtest: modul diekspos sebagai global `Rules` (tanpa build step) dan tidak memakai optional chaining
+ok 36 - modul diekspos sebagai global `Rules` (tanpa build step) dan tidak memakai optional chaining
+  ---
+  duration_ms: 0.618155
+  ...
+# Save ditolak: struktur data tidak valid
+# Subtest: save tanpa version (warisan) diterima sebagai versi 1
+ok 37 - save tanpa version (warisan) diterima sebagai versi 1
+  ---
+  duration_ms: 16.47058
+  ...
+# Subtest: save dengan version tak dikenal ditolak sebagai kandidat
+ok 38 - save dengan version tak dikenal ditolak sebagai kandidat
+  ---
+  duration_ms: 11.797348
+  ...
+# Subtest: save dengan version bukan bilangan bulat yang sah ditolak
+ok 39 - save dengan version bukan bilangan bulat yang sah ditolak
+  ---
+  duration_ms: 8.767703
+  ...
+# Subtest: save version=1 dimuat dan gameState terpasang utuh
+ok 40 - save version=1 dimuat dan gameState terpasang utuh
+  ---
+  duration_ms: 8.901659
+  ...
+# Subtest: loadGame menolak versi tak dikenal TANPA merusak state berjalan
+ok 41 - loadGame menolak versi tak dikenal TANPA merusak state berjalan
+  ---
+  duration_ms: 11.111066
+  ...
+# Subtest: makeMove mengklaim kotak yang tinggal satu sisi (bukan hanya memasang garis)
+ok 42 - makeMove mengklaim kotak yang tinggal satu sisi (bukan hanya memasang garis)
+  ---
+  duration_ms: 23.297851
+  ...
+# Subtest: papan penuh mengakhiri permainan dan total skor = jumlah kotak
+ok 43 - papan penuh mengakhiri permainan dan total skor = jumlah kotak
+  ---
+  duration_ms: 15.107023
+  ...
+# Subtest: makeMove menolak gerakan di luar papan tanpa melempar exception
+ok 44 - makeMove menolak gerakan di luar papan tanpa melempar exception
+  ---
+  duration_ms: 4.457541
+  ...
+# Subtest: garis yang sudah ada ditolak dan tidak mengubah pemiliknya
+ok 45 - garis yang sudah ada ditolak dan tidak mengubah pemiliknya
+  ---
+  duration_ms: 5.819954
+  ...
+# Subtest: replayStep mengklaim kotak sama seperti permainan asli
+ok 46 - replayStep mengklaim kotak sama seperti permainan asli
+  ---
+  duration_ms: 11.792525
+  ...
+# Subtest: garis yang sudah dimiliki tidak muncul di availableMoves
+ok 47 - garis yang sudah dimiliki tidak muncul di availableMoves
+  ---
+  duration_ms: 2.708059
+  ...
+# Subtest: menerapkan garis yang sudah dimiliki tidak mengubah papan (guard klik ganda)
+ok 48 - menerapkan garis yang sudah dimiliki tidak mengubah papan (guard klik ganda)
+  ---
+  duration_ms: 0.938965
+  ...
+# Subtest: skor hasil Rules sama dengan hitung ulang manual dari papan
+ok 49 - skor hasil Rules sama dengan hitung ulang manual dari papan
+  ---
+  duration_ms: 0.704592
+  ...
+# Subtest: script.js mendelegasikan aturan kotak ke Rules (tidak ada aturan kedua)
+ok 50 - script.js mendelegasikan aturan kotak ke Rules (tidak ada aturan kedua)
+  ---
+  duration_ms: 0.74659
+  ...
+# Subtest: script.js tidak lagi mendeklarasikan gameState sebagai objek literal const
+ok 51 - script.js tidak lagi mendeklarasikan gameState sebagai objek literal const
+  ---
+  duration_ms: 2.06863
+  ...
+# Subtest: index.html memuat rules.js SEBELUM ai-engine.js dan script.js
+ok 52 - index.html memuat rules.js SEBELUM ai-engine.js dan script.js
+  ---
+  duration_ms: 0.354816
+  ...
+# Subtest: hanya satu timer AI aktif
+ok 53 - hanya satu timer AI aktif
+  ---
+  duration_ms: 2.287937
+  ...
+# Subtest: schedule dipanggil dua kali menghasilkan satu eksekusi
+ok 54 - schedule dipanggil dua kali menghasilkan satu eksekusi
+  ---
+  duration_ms: 0.361036
+  ...
+# Subtest: clear() mencegah eksekusi basi setelah papan direset
+ok 55 - clear() mencegah eksekusi basi setelah papan direset
+  ---
+  duration_ms: 0.234999
+  ...
+# Subtest: shouldScheduleAI hanya true saat giliran pemain AI dan game berjalan
+ok 56 - shouldScheduleAI hanya true saat giliran pemain AI dan game berjalan
+  ---
+  duration_ms: 0.305343
+  ...
+1..56
+# tests 56
+# suites 0
+# pass 56
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 566.128693
+exit=0

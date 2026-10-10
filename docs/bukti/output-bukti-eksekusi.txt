@@ -1,0 +1,77 @@
+========================================================================
+BAGIAN 1 — Jalur penjadwalan makeAIMove dan status aiMoveTimeout
+========================================================================
+
+[BUKTI-KUAT] 1a. Jalur yang menjadwalkan makeAIMove
+Jumlah jalur setTimeout(() => makeAIMove()) : 3
+script.js:181  setTimeout(() => makeAIMove(), 500);
+script.js:594  setTimeout(() => makeAIMove(), 400);
+script.js:631  setTimeout(() => makeAIMove(), 400);
+
+Panggilan langsung (tanpa setTimeout)         : 1
+script.js:722  function makeAIMove() {
+
+Catatan: jalur ke-3 (switchTurn) adalah penjadwalan BERSYARAT (hanya saat pemain berikutnya isAI).
+
+[BUKTI-KUAT] 1b. Pembungkusan ganda setTimeout di dalam makeAIMove
+Jumlah setTimeout(() => executeAIMove()) : 1
+script.js:724  setTimeout(() => executeAIMove(), 300);
+
+[BUKTI-KUAT] 1c. aiMoveTimeout: dideklarasikan tetapi TIDAK pernah dipakai
+Semua kemunculan identifier 'aiMoveTimeout' di script.js: 1
+script.js:720  let aiMoveTimeout = null;
+
+Kesimpulan: hanya ada deklarasi `let aiMoveTimeout = null;`, tidak ada penugasan, pembacaan, clearTimeout(aiMoveTimeout), maupun referensi lain -> variabel mati.
+
+========================================================================
+BAGIAN 2 — Bentuk Box: Rules.createBoard vs inisialisasi script.js
+========================================================================
+
+[BUKTI-KUAT] 2a. Rules.createBoard menghasilkan Box TANPA field `edges`
+Bentuk Box dari Rules.createBoard(3) : owner
+Contoh nyata                         : {"owner":null}
+Bentuk Edge dari Rules.createBoard(3): owner
+
+[BUKTI-KUAT] 2b. Inisialisasi script.js menulis field `edges` yang tidak pernah dibaca
+Bentuk Box dari inisialisasi script.js : edges,owner
+Contoh nyata                          : {"owner":null,"edges":{"top":null,"bottom":null,"left":null,"right":null}}
+
+Pembaca field Box.edges ditemukan     : 0
+(tidak ada)
+
+Kesimpulan: field `edges` pada Box adalah DEAD WRITE; satu-satunya pembaca field milik Edge (state.edges.horizontal/vertical) yang punya bentuk { owner: null } dan memang dipakai.
+
+========================================================================
+BAGIAN 3 — getBestMove null => giliran menggantung (bukti dinamis)
+========================================================================
+
+[BUKTI-KUAT] 3a. getBestMove() === null pada giliran AI => tidak ada fallback
+Skenario: pemain AI aktif, papan masih punya langkah legal, tetapi mesin AI mengembalikan null.
+Fungsi yang dieksekusi: executeAIMove() ASLI dari script.js (disadur ke sandbox VM, tidak diubah).
+
+getBestMove dipanggil        : true
+makeMove dipanggil berapa x  : 0
+switchTurn dipanggil         : false
+endGame dipanggil            : false
+pesan ke pemain (showToast)  : (tidak ada)
+
+Kesimpulan: pada `if (!move) return;` (script.js:746) fungsi keluar TANPA memilih ulang, TANPA berpindah giliran, dan TANPA memberi tahu pemain. Pemain yang sudah terlanjur gilirannya tidak punya jalur pemulihan di dalam satu snapshot kode ini; satu-satunya harapan adalah efek samping setTimeout yang masih tertunda.
+
+[BUKTI-KUAT] 3b. Kontra-bukti: move valid tetap diproses (setup benar)
+makeMove dipanggil berapa x : 1
+Argumen                     : ["horizontal",0,0]
+
+Ini menunjukkan kasus 3a bukan artefak setup: bedanya hanya nilai kembalian getBestMove (null vs move).
+
+========================================================================
+RINGKASAN
+========================================================================
+BUKTI-KUAT  - 1a. Jalur yang menjadwalkan makeAIMove
+BUKTI-KUAT  - 1b. Pembungkusan ganda setTimeout di dalam makeAIMove
+BUKTI-KUAT  - 1c. aiMoveTimeout: dideklarasikan tetapi TIDAK pernah dipakai
+BUKTI-KUAT  - 2a. Rules.createBoard menghasilkan Box TANPA field `edges`
+BUKTI-KUAT  - 2b. Inisialisasi script.js menulis field `edges` yang tidak pernah dibaca
+BUKTI-KUAT  - 3a. getBestMove() === null pada giliran AI => tidak ada fallback
+BUKTI-KUAT  - 3b. Kontra-bukti: move valid tetap diproses (setup benar)
+
+Total bagian: 7 | bukti kuat: 7 | gagal: 0

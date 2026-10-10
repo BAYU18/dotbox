@@ -33,3 +33,15 @@ Kosakata domain permainan. Murni istilah; **tanpa** detail implementasi.
 - **Riwayat langkah (moveHistory)** — daftar gerakan berurutan beserta pemiliknya.
 - **Mode replay** — mode hanya-baca yang merekonstruksi papan dari `moveHistory`, tanpa mengubah permainan berjalan.
 - **Reset papan (resetBoardOnly)** — mengosongkan garis, kotak, skor, dan riwayat **tanpa** mengubah konfigurasi pemain.
+
+## Penjadwalan giliran
+
+- **Giliran AI tertunda (pending AI turn)** — giliran pemain AI yang **sudah dijadwalkan** tetapi belum dijalankan. Selama ada giliran tertunda, tidak boleh ada giliran tertunda kedua untuk papan yang sama.
+- **Antrian giliran (turn queue)** — penampung **satu slot** untuk giliran AI tertunda. "Satu slot" berarti penjadwalan kedua **menggantikan** yang pertama, bukan menumpuknya. (Nama historis "queue" dipertahankan; secara perilaku ini bukan antrian FIFO.)
+- **Eksekusi basi (stale execution)** — giliran AI tertunda yang dijalankan setelah papan berubah (reset / muat ulang), sehingga berlaku pada permainan yang sudah tidak relevan. Dibatalkan dengan `clear()`.
+
+## Data simpanan (save)
+
+- **Versi skema save (save schema version)** — penanda yang menyatakan bentuk data `localStorage`. Versi terkini adalah `1`. Save yang ditulis sebelum ada penanda diperlakukan sebagai versi 1 (bentuknya identik).
+- **Save warisan (legacy save)** — save tanpa field `version`. Diterima selama bentuknya cocok dengan versi terkini.
+- **Versi tak dikenal (unknown version)** — penanda versi di luar rentang yang dikenali kode. Save seperti ini **ditolak** dan tidak boleh mengubah permainan berjalan (aturan atomik QA-2).

@@ -121,7 +121,7 @@ function muatScript() {
   sb.window = sb;
   sb.globalThis = sb;
   vm.createContext(sb);
-  for (const berkas of ['rules.js', 'ai-engine.js', 'script.js']) {
+  for (const berkas of ['rules.js', 'turn-queue.js', 'ai-engine.js', 'script.js']) {
     const kode = fs.readFileSync(path.join(ROOT, berkas), 'utf8');
     vm.runInContext(kode, sb, { filename: berkas });
   }

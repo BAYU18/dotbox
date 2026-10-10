@@ -100,7 +100,7 @@ function muatScript() {
   sb.localStorage = buatLocalStorage();
 
   vm.createContext(sb);
-  for (const berkas of ['rules.js', 'ai-engine.js', 'script.js']) {
+  for (const berkas of ['rules.js', 'turn-queue.js', 'ai-engine.js', 'script.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, berkas), 'utf8'), sb, { filename: berkas });
   }
   return sb;
@@ -194,7 +194,7 @@ function muatScriptDenganGridBtn() {
   sb.localStorage = buatLocalStorage();
 
   vm.createContext(sb);
-  for (const berkas of ['rules.js', 'ai-engine.js', 'script.js']) {
+  for (const berkas of ['rules.js', 'turn-queue.js', 'ai-engine.js', 'script.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, berkas), 'utf8'), sb, { filename: berkas });
   }
   // Daftarkan listener nyata: di sinilah handler `.grid-btn` asli terpasang.
