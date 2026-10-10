@@ -647,3 +647,44 @@ body.dark-mode h1 {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+   AKSESIBILITAS (P3)
+   ============================================================ */
+
+/* Cincin fokus yang terlihat, hanya untuk navigasi keyboard.
+   Memakai :focus-visible (bukan :focus) supaya klik tetikus tidak
+   memunculkan cincin. WCAG 2.2 SC 2.4.7 / 2.4.11. */
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+    outline: 3px solid var(--accent-primary);
+    outline-offset: 2px;
+}
+
+/* Kelas untuk konten yang hanya ditujukan pembaca layar. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Hormati preferensi pengguna yang meminta gerakan diminimalkan. */
+@media (prefers-reduced-motion: reduce) {
+    .toast,
+    .box-highlight,
+    .modal,
+    .modal-content,
+    .turn-indicator,
+    .loading::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}

@@ -1,0 +1,30 @@
+=== BASELINE (sebelum build selesai) 2026-10-10T16:27:50Z ===
+
+--- node --test (suite penuh) ---
+# tests 86
+# suites 0
+# pass 69
+# fail 17
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 857.378575
+
+--- suite baru QA acceptance ---
+not ok 1 - P0-1: getBestMove null + masih ada garis kosong -> langkah cadangan DIMAINKAN dan pemain diberi tahu
+not ok 2 - P0-2: getBestMove null + papan penuh -> endGame dipanggil, tanpa langkah ilegal
+not ok 3 - P0-3: langkah cadangan DETERMINISTIK (dua permainan identik memilih langkah sama)
+not ok 5 - P0-5 (statis): `if (!move) return;` sudah dihapus dari script.js
+not ok 8 - P2s-3: alasan penolakan bisa DIBEDAKAN: versi tak dikenal vs struktur tak valid
+not ok 10 - P3-1: index.html tidak lagi mematikan zoom (tanpa user-scalable=no & maximum-scale=1.0)
+not ok 11 - P3-2: setiap tombol ikon/replay punya aria-label tidak kosong
+not ok 12 - P3-3: style.css punya :focus-visible dan prefers-reduced-motion
+not ok 13 - P3-4: ada live region \#liveStatus dan diperbarui dari updateUI() dengan teks (tanpa emoji)
+not ok 14 - P5-1: DPR 2 -> bitmap = size*2, style CSS = size px
+not ok 15 - P5-2: konteks menerima setTransform(DPR,0,0,DPR,0,0)
+not ok 18 - P4-2: isi save terakhir SAMA dengan gameState terakhir (hemat I/O tidak boleh merusak data)
+not ok 19 - P4-3: ada penyelamat beforeunload yang menulis save (tidak kehilangan data saat tab ditutup)
+not ok 20 - P6-1: initGame tidak lagi menulis Box.edges (dead write hilang)
+# tests 21
+# pass 7
+# fail 14

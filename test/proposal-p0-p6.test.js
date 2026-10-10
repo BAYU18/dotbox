@@ -136,10 +136,10 @@ test('P0-a: getBestMove null TIDAK membuat giliran menggantung — minimal satu 
   const gs = mulaiPermainanAI(sb);
 
   // Paksa AI gagal menemukan langkah.
-  // PENTING: `executeAIMove` memanggil `aiEngine.getBestMove(...)`
-  // (script.js:754), BUKAN fungsi global `getBestMove`. Jadi override harus
-  // mengenai instance `aiEngine`, kalau tidak AI asli tetap memilih langkah
-  // dan test mengukur hal yang salah (merah/hijau palsu).
+  // PENTING: produksi memanggil `aiEngine.getBestMove(...)` (script.js:754), BUKAN
+  // fungsi global `getBestMove`. `aiEngine` adalah binding `let` di tingkat atas,
+  // jadi menimpa propertinya mengenai sasaran; menimpa `globalThis.getBestMove`
+  // TIDAK menggantikan apa pun. Karena itu override harus mengenai instance.
   dalam(sb, `aiEngine.getBestMove = function () { return null; }`);
 
   // Amati konsekuensi nyata dari executeAIMove.
@@ -189,7 +189,9 @@ test('P0-b: fallback hanya memakai langkah LEGAL dari Rules.availableMoves', () 
   const sb = muatScript();
   const gs = mulaiPermainanAI(sb);
 
-  dalam(sb, `getBestMove = function () { return null; }`);
+  // PENTING: produksi memanggil `aiEngine.getBestMove` (script.js:754), bukan
+  // fungsi global `getBestMove`. Override harus mengenai instance-nya.
+  dalam(sb, 'aiEngine.getBestMove = function () { return null; }');
   const legal = dalam(sb, 'JSON.stringify(Rules.availableMoves(gameState).map(m => [m.type, m.row, m.col]))');
   const daftarLegal = new Set(JSON.parse(legal).map((m) => m.join('/')));
 
@@ -246,6 +248,58 @@ test('P0-c: papan yang benar-benar penuh -> endGame dipanggil, tanpa langkah ile
 
   assert.strictEqual(catat.makeMove, 0, 'tidak boleh memainkan langkah saat papan penuh (tidak ada langkah legal)');
   assert.ok(catat.endGame > 0, 'papan penuh + AI null -> permainan harus diakhiri (endGame), bukan menggantung');
+});
+
+test('P0-d: jalur fallback selalu memberi tahu pemain (toast tepat 1×, tidak diam)', () => {
+  // D11 (spec revisi 3): asersi P0-a bercabang (`if (catat.makeMove === 0) assert toast`),
+  // sehingga ia bisa HIJAU padahal pemain tetap tidak diberi tahu — mis. bila satu-satunya
+  // konsekuensi adalah `switchTurn`. Test ini menutup celah itu: pada jalur cadangan,
+  // pemain WAJIB diberi tahu tepat satu kali dan langkah cadangan benar-benar dimainkan.
+  const sb = muatScript();
+  const gs = mulaiPermainanAI(sb);
+
+  assert.ok(
+    dalam(sb, 'Rules.availableMoves(gameState).length') > 0,
+    'prasyarat: papan harus masih punya garis kosong'
+  );
+  dalam(sb, 'aiEngine.getBestMove = function () { return null; }');
+
+  const catat = dalam(sb, `(() => {
+    const jejak = { makeMove: 0, showToast: 0, pesan: [] };
+    const asliShowToast = showToast;
+    // CATATAN: jangan pakai nama parameter "a" di sini — modul yang dimuat di
+    // sandbox (ai-engine.js/script.js) memakai "catch (a)" tanpa deklarasi
+    // block, sehingga "a" terlihat sebagai binding terurai di scope global
+    // sandbox dan bocor sebagai ReferenceError di dalam closure ini.
+    // (Jangan menulis tanda backtick di dalam template literal ini.)
+    // Simpan referensi ASLI sebelum menimpa: sandbox memakai globalThis === sb,
+    // sehingga menugaskan lewat globalThis membuat nama itu menunjuk ke dirinya
+    // sendiri dan berrekursi tanpa henti (RangeError).
+    const asliMakeMove = makeMove;
+    globalThis.makeMove = function () { jejak.makeMove++; return asliMakeMove.apply(this, arguments); };
+    globalThis.showToast = function (m) {
+      jejak.showToast++;
+      jejak.pesan.push(String(m));
+      return asliShowToast.apply(this, arguments);
+    };
+    return jejak;
+  })()`);
+
+  dalam(sb, 'executeAIMove()');
+
+  assert.strictEqual(
+    catat.makeMove, 1,
+    `jalur cadangan harus memainkan tepat satu langkah; nyatanya ${catat.makeMove}`
+  );
+  assert.strictEqual(
+    catat.showToast, 1,
+    `pemain harus diberi tahu tepat sekali saat langkah cadangan dipakai; nyatanya ${catat.showToast} ` +
+      `(pesan: ${JSON.stringify(catat.pesan)}) -> giliran diam tanpa penjelasan`
+  );
+  assert.ok(
+    dalam(sb, 'gameState.moveHistory.length') > 0,
+    'langkah cadangan harus tercatat sebagai gerakan nyata, bukan sekadar pemanggilan'
+  );
 });
 
 /* ==================================================================
