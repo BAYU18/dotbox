@@ -56,7 +56,7 @@ Berkas bukti yang dikutip cocok kata demi kata:
 - `docs/bukti/node-test-qa-polos.txt:288–294` → `# pass 56` / `# fail 0` / `exit=0` ✅
 - `docs/bukti/p1-terpasang.txt:150–158` → `# pass 56` / `# fail 0` / `# exit=0` ✅
 - `docs/bukti/node-test-p1-terpasang.txt` → `# tests 56` / `# pass 42` / `# fail 14` ✅ (ditulis persis "42 lulus/14 gagal", **tidak** tertukar)
-- Nama berkas `node-test-polos-qa.txt` (52/52, tidak pernah ada) → sudah dihapus dari dokumen ✅
+- `docs/bukti/node-test-polos-qa.txt` → **ADA** (`1..52`/`# pass 52`/`# fail 0`/`# exit=0`, `:266–275`, commit `3d2eebc`) → **KOREKSI REVISI-2**: klaim "tidak pernah ada" di revisi sebelumnya **SALAH**; nama berkas itu sah dan dikutip dengan benar ✅
 
 ### 3a. Rincian 14 kegagalan `node-test-p1-terpasang.txt` (dikonfirmasi, sesuai §7.6)
 
