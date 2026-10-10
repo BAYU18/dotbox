@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  deploy/hooks/pre-commit — penjaga gerbang sebelum tiap commit (tanpa dependensi)
+#
+#  KENAPA TANPA HUSKY. Skill setup-pre-commit biasanya memakai Husky +
+#  lint-staged + Prettier. Proyek dotbox ini secara sengaja BERNOLEH NOL
+#  dependensi (README: "No build step and no dependencies are needed").
+#  Memasang Husky berarti menambah package.json + node_modules dan mematahkan
+#  janji itu. Jadi kami menulis penjaga yang sama tanpa dependensi: satu
+#  skrip bash yang dijalankan git sendiri.
+#
+#  Ia melakukan hal yang paling berguna di repo ini:
+#    1. Menjalankan suite `node --test test/` — gerbang yang sama dengan QA.
+#    2. Menolak commit bila ada berkas rilis yang kosong.
+#    3. Mengingatkan bila berkas sisa `scripts/run-tests-verify.js` masih ada.
+#
+#  Pasang dengan:  deploy/install-hooks.sh
+#  Lewati (darurat saja) dengan:  git commit --no-verify
+# ============================================================================
+set -euo pipefail
+
+DIM=""; RESET=""; RED=""; GREEN=""; YELLOW=""
+if [ -t 1 ]; then
+  DIM=$(tput dim 2>/dev/null || true); RESET=$(tput sgr0 2>/dev/null || true)
+  RED=$(tput setaf 1 2>/dev/null || true); GREEN=$(tput setaf 2 2>/dev/null || true)
+  YELLOW=$(tput setaf 3 2>/dev/null || true)
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+fail() { printf '%s[pre-commit] %s%s\n' "$RED" "$1" "$RESET" >&2; exit 1; }
+
+printf '%s[pre-commit] menjalankan node --test…%s\n' "$DIM" "$RESET"
+if ! command -v node >/dev/null 2>&1; then
+  fail "node tidak ditemukan — tidak bisa memverifikasi suite. Pasang node atau pakai --no-verify."
+fi
+
+if ! node --test test/ >/tmp/dotbox-precommit-test.log 2>&1; then
+  printf '\n'
+  grep -E '^(not ok|# (tests|pass|fail))' /tmp/dotbox-precommit-test.log | sed 's/^/  /' >&2 || true
+  fail "suite GAGAL. Commit ditolak. Perbaiki dulu (atau --no-verify bila benar-benar terpaksa)."
+fi
+printf '%s[pre-commit] suite LULUS%s\n' "$GREEN" "$RESET"
+
+# Berkas rilis tidak boleh kosong (situs statis: berkas kosong = halaman rusak).
+for f in index.html script.js rules.js ai-engine.js turn-queue.js style.css; do
+  [ -s "$f" ] || fail "berkas rilis kosong atau hilang: $f"
+done
+
+# Berkas sisa dari langkah desain Architect — jangan sampai ter-commit.
+if [ -e scripts/run-tests-verify.js ]; then
+  printf '%s[pre-commit] PERINGATAN: scripts/run-tests-verify.js masih ada.%s\n' "$YELLOW" "$RESET" >&2
+  printf '%s  Hapus dengan: rm scripts/run-tests-verify.js%s\n' "$YELLOW" "$RESET" >&2
+fi
+
+# Dokumentasi internal tidak boleh ada di direktori rilis terbit.
+if [ -d dist ]; then
+  if find dist \( -name '*.md' -o -name '*.txt' \) | grep -q .; then
+    fail "dist/ memuat berkas internal (.md/.txt). Rilis harus bersih."
+  fi
+fi
+
+printf '%s[pre-commit] OK%s\n' "$GREEN" "$RESET"

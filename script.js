@@ -148,11 +148,13 @@ function initGame(config) {
         Array(gridSize).fill(null).map(() => ({ owner: null }))
     );
     
-    // Initialize boxes
+    // Initialize boxes — bentuk kanonik { owner } (lihat catatan Ruling 1 di resetBoardOnly)
     gameState.boxes = Array(gridSize - 1).fill(null).map(() => 
         Array(gridSize - 1).fill(null).map(() => ({
-            owner: null,
-            edges: { top: null, bottom: null, left: null, right: null }
+            // Box kanonik (Ruling 1): { owner } saja. `edges` di dalam box
+            // adalah dead write (ditulis, tidak pernah dibaca) — dihapus P6.
+            // Jalur resmi Edge adalah `gameState.edges`.
+            owner: null
         }))
     );
     
@@ -724,6 +726,15 @@ function updateUI() {
             </div>
         `;
     }).join('');
+
+    // Pengumuman status untuk pembaca layar (P3). Nullable-safe: stub DOM test
+    // lain dan lingkungan lama boleh tidak punya #liveStatus.
+    // Teks saja, tanpa emoji.
+    const liveStatus = document.getElementById('liveStatus');
+    if (liveStatus) {
+        liveStatus.textContent = `Giliran: ${currentPlayer.name}. Skor: ${
+            gameState.players.map((p, i) => `${p.name} ${gameState.scores[i]}`).join(', ')}.`;
+    }
 }
 
 // ============ AI ============
@@ -752,14 +763,40 @@ function executeAIMove() {
     };
     
     const move = aiEngine.getBestMove(aiState, gameState.currentPlayerIndex);
-    
-    if (!move) return;
-    
-    // Make the move directly
-    makeMove(move.type, move.row, move.col);
-    
-    // Note: makeMove handles box completion - if AI gets a box, it stays same player's turn
-    // So we need to check if AI should continue
+
+    if (move && makeMove(move.type, move.row, move.col)) {
+        // Jalur normal: pencarian berhasil dan papan menerimanya. TANPA toast.
+        // `makeMove` menangani kotak yang selesai (giliran ekstra + penjadwalan).
+        return;
+    }
+
+    // P0 — giliran TIDAK boleh menggantung. Sebelumnya `executeAIMove` keluar
+    // lewat `return` telanjang saat pencarian gagal, sehingga papan diam tanpa
+    // penjelasan sama sekali (tanpa langkah, tanpa pesan, tanpa perpindahan
+    // giliran). Sekarang setiap jalur keluar berakhir di salah satu dari tiga:
+    // langkah benar-benar dimainkan, giliran berpindah dengan pemberitahuan,
+    // atau permainan dinyatakan selesai.
+    //
+    // Satu-satunya sumber langkah legal tetap `Rules.availableMoves` (ADR-0001).
+    // Fallback ini TIDAK menulis papan sendiri, TIDAK memanggil Rules.applyMove,
+    // dan TIDAK membuat timer baru. Pemilihan deterministik (ADR-0003).
+    const kandidat = Rules.availableMoves(gameState);
+
+    if (kandidat.length === 0) {
+        showToast('Tidak ada langkah tersisa. Permainan selesai.');
+        endGame();
+        return;
+    }
+
+    const pilihan = kandidat[0]; // deterministik, BUKAN acak (ADR-0003)
+    showToast('AI: langkah cadangan dipakai karena pencarian gagal.');
+
+    if (!makeMove(pilihan.type, pilihan.row, pilihan.col)) {
+        // Kandidat dari `Rules` seharusnya selalu diterima `makeMove`. Bila tidak,
+        // minimal giliran berpindah supaya pemain tidak terjebak selamanya.
+        switchTurn();
+        showToast('AI tidak dapat bergerak; giliran dialihkan.');
+    }
 }
 
 // ============ STORAGE ============
@@ -801,64 +838,80 @@ function saveGame() {
 
 const SAVE_KEYS = ['config', 'players', 'currentPlayerIndex', 'edges', 'boxes', 'scores', 'moveHistory', 'isGameOver'];
 
-function buatKandidatState(saveData) {
-    if (!saveData || typeof saveData !== 'object' || Array.isArray(saveData)) return null;
+// Peta kode penolakan -> kalimat yang dicetak (P2-sisa). Dipakai `loadGame`
+// supaya tiga kelas penolakan bisa dibedakan dari log (bukan satu pesan gabungan).
+const PESAN_PENOLAKAN = {
+    'bukan-objek': 'Save ditolak: data simpanan bukan objek.',
+    'versi-tak-dikenal': 'Save ditolak: versi skema tidak dikenal.',
+    'struktur-tak-valid': 'Save ditolak: struktur data tidak valid.'
+};
+
+function buatKandidatState(saveData, alasan) {
+    // `alasan` OPSIONAL: kontrak lama `buatKandidatState(x) -> State|null` tetap
+    // berlaku. Bila diberikan, fungsi ini menuliskan `alasan.kode` supaya
+    // `loadGame` bisa mencetak pesan yang bisa didiagnosis (P2-sisa, spec §4.1).
+    const tolak = (kode) => {
+        if (alasan) alasan.kode = kode;
+        return null;
+    };
+
+    if (!saveData || typeof saveData !== 'object' || Array.isArray(saveData)) return tolak('bukan-objek');
 
     // --- versi skema ---
-    if (!versiDikenal(saveData.version)) return null;
+    if (!versiDikenal(saveData.version)) return tolak('versi-tak-dikenal');
 
     for (const key of SAVE_KEYS) {
-        if (!(key in saveData)) return null;
+        if (!(key in saveData)) return tolak('struktur-tak-valid');
     }
 
     const { config, players, currentPlayerIndex, edges, boxes, scores, moveHistory, isGameOver } = saveData;
 
     // --- config ---
-    if (!config || typeof config !== 'object') return null;
+    if (!config || typeof config !== 'object') return tolak('struktur-tak-valid');
     const gridSize = config.gridSize;
     const totalPlayers = config.totalPlayers;
     const aiCount = config.aiCount;
     const aiDepth = config.aiDepth;
-    if (!Number.isInteger(gridSize) || gridSize < 2) return null;
-    if (!Number.isInteger(totalPlayers) || totalPlayers < 1 || totalPlayers > PLAYER_COLORS.length) return null;
-    if (!Number.isInteger(aiCount) || aiCount < 0 || aiCount >= totalPlayers) return null;
-    if (!Number.isInteger(aiDepth) || aiDepth < 1) return null;
+    if (!Number.isInteger(gridSize) || gridSize < 2) return tolak('struktur-tak-valid');
+    if (!Number.isInteger(totalPlayers) || totalPlayers < 1 || totalPlayers > PLAYER_COLORS.length) return tolak('struktur-tak-valid');
+    if (!Number.isInteger(aiCount) || aiCount < 0 || aiCount >= totalPlayers) return tolak('struktur-tak-valid');
+    if (!Number.isInteger(aiDepth) || aiDepth < 1) return tolak('struktur-tak-valid');
 
     // --- pemain ---
-    if (!Array.isArray(players) || players.length !== totalPlayers) return null;
+    if (!Array.isArray(players) || players.length !== totalPlayers) return tolak('struktur-tak-valid');
     const pemainValid = players.every((p, i) =>
         p && typeof p === 'object' && typeof p.name === 'string' && typeof p.color === 'string' &&
         (typeof p.isAI === 'boolean') && (p.id === undefined || p.id === i));
-    if (!pemainValid) return null;
+    if (!pemainValid) return tolak('struktur-tak-valid');
 
     // --- indeks giliran ---
-    if (!Number.isInteger(currentPlayerIndex) || currentPlayerIndex < 0 || currentPlayerIndex >= totalPlayers) return null;
+    if (!Number.isInteger(currentPlayerIndex) || currentPlayerIndex < 0 || currentPlayerIndex >= totalPlayers) return tolak('struktur-tak-valid');
 
     // --- papan (edges) ---
-    if (!edges || typeof edges !== 'object' || !Array.isArray(edges.horizontal) || !Array.isArray(edges.vertical)) return null;
-    if (edges.horizontal.length !== gridSize) return null;
-    if (edges.vertical.length !== gridSize - 1) return null;
+    if (!edges || typeof edges !== 'object' || !Array.isArray(edges.horizontal) || !Array.isArray(edges.vertical)) return tolak('struktur-tak-valid');
+    if (edges.horizontal.length !== gridSize) return tolak('struktur-tak-valid');
+    if (edges.vertical.length !== gridSize - 1) return tolak('struktur-tak-valid');
 
     const ownerSah = (owner) => owner === null || (Number.isInteger(owner) && owner >= 0 && owner < totalPlayers);
     const barisGarisSah = (baris, panjang) =>
         Array.isArray(baris) && baris.length === panjang &&
         baris.every((e) => e && typeof e === 'object' && ownerSah(e.owner));
 
-    if (!edges.horizontal.every((baris) => barisGarisSah(baris, gridSize - 1))) return null;
-    if (!edges.vertical.every((baris) => barisGarisSah(baris, gridSize))) return null;
+    if (!edges.horizontal.every((baris) => barisGarisSah(baris, gridSize - 1))) return tolak('struktur-tak-valid');
+    if (!edges.vertical.every((baris) => barisGarisSah(baris, gridSize))) return tolak('struktur-tak-valid');
 
     // --- kotak ---
-    if (!Array.isArray(boxes) || boxes.length !== gridSize - 1) return null;
+    if (!Array.isArray(boxes) || boxes.length !== gridSize - 1) return tolak('struktur-tak-valid');
     const barisBoxSah = (baris) =>
         Array.isArray(baris) && baris.length === gridSize - 1 &&
         baris.every((b) => b && typeof b === 'object' && ownerSah(b.owner));
-    if (!boxes.every(barisBoxSah)) return null;
+    if (!boxes.every(barisBoxSah)) return tolak('struktur-tak-valid');
 
     // --- skor, riwayat, selesai ---
-    if (!Array.isArray(scores) || scores.length !== totalPlayers) return null;
-    if (!scores.every((s) => Number.isInteger(s) && s >= 0)) return null;
-    if (!Array.isArray(moveHistory)) return null;
-    if (typeof isGameOver !== 'boolean') return null;
+    if (!Array.isArray(scores) || scores.length !== totalPlayers) return tolak('struktur-tak-valid');
+    if (!scores.every((s) => Number.isInteger(s) && s >= 0)) return tolak('struktur-tak-valid');
+    if (!Array.isArray(moveHistory)) return tolak('struktur-tak-valid');
+    if (typeof isGameOver !== 'boolean') return tolak('struktur-tak-valid');
 
     // Kandidat murni: salinan siap dipasang ke gameState.
     return {
@@ -895,9 +948,10 @@ function loadGame() {
 
     // Validasi SELESAI sebelum menyentuh gameState (QA-2): tidak ada state
     // setengah-termuat walau validasi gagal di tengah.
-    const kandidat = buatKandidatState(saveData);
+    const alasan = {};
+    const kandidat = buatKandidatState(saveData, alasan);
     if (!kandidat) {
-        console.error('Save ditolak: struktur data tidak valid');
+        console.error(PESAN_PENOLAKAN[alasan.kode] || 'Save ditolak: struktur data tidak valid');
         return false;
     }
 
@@ -1074,8 +1128,10 @@ function resetBoardOnly() {
     
     gameState.boxes = Array(gridSize - 1).fill(null).map(() => 
         Array(gridSize - 1).fill(null).map(() => ({
-            owner: null,
-            edges: { top: null, bottom: null, left: null, right: null }
+            // Box kanonik (Ruling 1): { owner } saja. `edges` di dalam box
+            // adalah dead write (ditulis, tidak pernah dibaca) — dihapus P6.
+            // Jalur resmi Edge adalah `gameState.edges`.
+            owner: null
         }))
     );
     

@@ -94,7 +94,7 @@ test('Rules.createBoard menghasilkan Box TANPA field edges', () => {
     assert.deepStrictEqual(kunci, ['owner']);
 });
 
-test('inisialisasi script.js menulis Box.edges yang tidak pernah dibaca (dead write)', () => {
+test('inisialisasi script.js TIDAK lagi menulis Box.edges (dead write dibuang)', () => {
     const mulai = sumberSkrip.indexOf('gameState.boxes = Array(gridSize - 1)');
     assert.ok(mulai >= 0, 'inisialisasi boxes harus ditemukan');
     const akhir = sumberSkrip.indexOf('// Initialize AI Engine', mulai);
@@ -110,7 +110,9 @@ test('inisialisasi script.js menulis Box.edges yang tidak pernah dibaca (dead wr
     );
     const boxes = JSON.parse(sb.__boxes);
     const kunci = [...new Set(boxes.flat().map((b) => Object.keys(b).sort().join(',')))];
-    assert.deepStrictEqual(kunci, ['edges,owner'], 'Box nyata di script.js membawa field edges');
+    // DIPERBARUI (P6 terpasang): Box kanonik adalah { owner }. Test ini dulu
+    // MENGUNCI BUG — ia menuntut `edges,owner`. Sekarang ia menuntut bentuk kanonik.
+    assert.deepStrictEqual(kunci, ['owner'], 'Box nyata harus kanonik { owner }');
 
     // Deteksi pembacaan field `edges` PADA BOX. Jalur resmi Edge adalah
     // `gameState.edges` / `state.edges` / `hasil.state.edges` dan harus
@@ -133,22 +135,45 @@ test('inisialisasi script.js menulis Box.edges yang tidak pernah dibaca (dead wr
 });
 
 /* ============================================================
-   Bagian 3 — executeAIMove tanpa fallback
+   Bagian 3 — executeAIMove DENGAN fallback (P0 terpasang)
+
+   DIPERBARUI: dua test di bawah dulu MENGUNCI BUG — mereka menuntut agar
+   `getBestMove()==null` membuat `makeMove` 0× dan tanpa pesan apa pun
+   ("tidak ada fallback, giliran menggantung"). Itu memang keadaan yang
+   dilaporkan proposal §P0 sebagai cacat, jadi test itu sekarang menuntut
+   perilaku yang BENAR: langkah cadangan tetap dimainkan + pemain diberi tahu.
+
+   Fixture papan harus BERBENTUK VALID bagi `Rules.availableMoves`: gridSize 3
+   berarti `edges.horizontal` 3 baris × 2 kolom (rules.js:69-75 menelusuri
+   `row < gridSize` dan `col < gridSize - 1`), jadi fixture 1 baris membuat
+   `undefined[0]` — bukan pesan kegagalan yang bermakna. Urutan
+   `availableMoves`: horizontal dulu (baris lalu kolom), jadi `kandidat[0]`
+   adalah horizontal/0/0.
    ============================================================ */
 
 const skripUntai = ambilFungsi(sumberSkrip, 'executeAIMove');
+
+/* Papan 3×3 kosong yang sah untuk `Rules.availableMoves` (3×2 + 2×3 = 12 garis). */
+const garisKosong = () => ({ owner: null });
+const papanKosong3 = () => ({
+    horizontal: [[garisKosong(), garisKosong()], [garisKosong(), garisKosong()], [garisKosong(), garisKosong()]],
+    vertical: [[garisKosong(), garisKosong(), garisKosong()], [garisKosong(), garisKosong(), garisKosong()]]
+});
 
 function jalankanKasusAIMove({ move, pemainAI }) {
     const sb = {};
     const jejak = { makeMove: [] };
     sb.console = console;
+    // Jalur fallback memanggil `Rules.availableMoves`, jadi `Rules` WAJIB ada di
+    // sandbox (sebelum P0 tidak dibutuhkan karena jalur itu tidak pernah jalan).
+    sb.Rules = require(path.join(ROOT, 'rules.js'));
     sb.gameState = {
         isGameOver: false,
         isReplayMode: false,
         currentPlayerIndex: pemainAI ? 0 : 1,
         config: { gridSize: 3 },
-        edges: { horizontal: [[{ owner: null }]], vertical: [[{ owner: null }]] },
-        boxes: [[{ owner: null }]],
+        edges: papanKosong3(),
+        boxes: [[{ owner: null }, { owner: null }], [{ owner: null }, { owner: null }]],
         players: pemainAI
             ? [{ isAI: true }, { isAI: false }]
             : [{ isAI: false }, { isAI: false }],
@@ -172,13 +197,58 @@ function jalankanKasusAIMove({ move, pemainAI }) {
     return jejak;
 }
 
-test('getBestMove()==null pada giliran AI: tidak ada fallback, giliran menggantung', () => {
+test('getBestMove()==null pada giliran AI: langkah cadangan tetap dimainkan', () => {
     const jejak = jalankanKasusAIMove({ move: null, pemainAI: true });
     assert.strictEqual(jejak.getBestMoveDipanggil, true);
-    assert.strictEqual(jejak.makeMove.length, 0, 'tidak boleh ada langkah pengganti');
-    assert.strictEqual(jejak.switchTurnDipanggil, undefined, 'giliran tidak berpindah');
-    assert.strictEqual(jejak.endGameDipanggil, undefined);
-    assert.strictEqual(jejak.toast, undefined, 'pemain tidak diberi tahu apa pun');
+    assert.deepStrictEqual(jejak.makeMove, [['horizontal', 0, 0]],
+        'setelah pencarian gagal, tepat satu langkah cadangan legal harus dimainkan');
+    assert.match(jejak.toast, /cadangan/i,
+        'pemain harus diberi tahu bahwa langkah cadangan dipakai');
+    assert.strictEqual(jejak.endGameDipanggil, undefined,
+        'fixture papan masih punya langkah legal -> permainan tidak boleh berakhir');
+});
+
+test('getBestMove()==null + papan benar-benar penuh: endGame dipanggil, bukan diam', () => {
+    // Fixture papan kosong diganti papan 3×3 yang SEMUA sisinya sudah terisi,
+    // supaya `Rules.availableMoves` benar-benar kosong (bentuknya harus lengkap:
+    // 3 baris horizontal × 2 kolom dan 2 baris vertical × 3 kolom).
+    const terisi = () => ({ owner: 1 });
+    const sb = {};
+    const jejak = { makeMove: 0, endGame: 0, toast: undefined };
+    sb.console = console;
+    sb.Rules = require(path.join(ROOT, 'rules.js'));
+    sb.gameState = {
+        isGameOver: false,
+        isReplayMode: false,
+        currentPlayerIndex: 0,
+        config: { gridSize: 3 },
+        edges: {
+            horizontal: [[terisi(), terisi()], [terisi(), terisi()], [terisi(), terisi()]],
+            vertical: [[terisi(), terisi(), terisi()], [terisi(), terisi(), terisi()]]
+        },
+        boxes: [[{ owner: 1 }, { owner: 1 }], [{ owner: 1 }, { owner: 1 }]],
+        players: [{ isAI: true }, { isAI: false }],
+        moveHistory: []
+    };
+    assert.deepStrictEqual(
+        sb.Rules.availableMoves(sb.gameState), [],
+        'prasyarat: fixture harus benar-benar tidak punya langkah legal'
+    );
+    sb.aiEngine = { getBestMove: () => null };
+    sb.makeMove = () => { jejak.makeMove++; return true; };
+    sb.switchTurn = () => {};
+    sb.showToast = (pesan) => { jejak.toast = pesan; };
+    sb.endGame = () => { jejak.endGame++; };
+
+    vm.createContext(sb);
+    vm.runInContext(`${skripUntai}\nexecuteAIMove();`, sb, {
+        filename: 'script.js (executeAIMove disadur, papan penuh)'
+    });
+
+    assert.strictEqual(jejak.makeMove, 0, 'papan penuh: tidak boleh ada langkah ilegal dimainkan');
+    assert.strictEqual(jejak.endGame, 1, 'papan penuh + pencarian gagal -> endGame(), bukan diam');
+    assert.match(String(jejak.toast), /tidak ada langkah|selesai/i,
+        'pemain harus diberi tahu bahwa tidak ada langkah tersisa');
 });
 
 test('kontra-bukti: getBestMove() valid tetap diteruskan ke makeMove', () => {
@@ -188,4 +258,5 @@ test('kontra-bukti: getBestMove() valid tetap diteruskan ke makeMove', () => {
     });
     assert.deepStrictEqual(jejak.makeMove, [['horizontal', 0, 0]],
         'harness harus membuktikan jalur sukses, bukan hanya jalur gagal');
+    assert.strictEqual(jejak.toast, undefined, 'jalur normal tidak boleh memunculkan toast');
 });

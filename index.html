@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dots and Boxes</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
         <!-- Header dengan Dark Mode Toggle -->
         <header>
             <h1>🎯 Dots & Boxes</h1>
-            <button id="darkModeToggle" class="icon-btn" title="Toggle Dark Mode">
+            <button id="darkModeToggle" class="icon-btn" title="Ganti mode gelap" aria-label="Ganti mode gelap">
                 🌙
             </button>
         </header>
@@ -91,10 +91,10 @@
                     <input type="range" id="replaySlider" min="0" max="0" value="0">
                 </div>
                 <div class="replay-buttons">
-                    <button id="replayPlayPause" class="btn-replay">▶️ Play</button>
-                    <button id="replayPrev" class="btn-replay">⏮️</button>
-                    <button id="replayNext" class="btn-replay">⏭️</button>
-                    <button id="replayClose" class="btn-replay">❌</button>
+                    <button id="replayPlayPause" class="btn-replay" aria-label="Putar atau jeda replay">▶️ Play</button>
+                    <button id="replayPrev" class="btn-replay" aria-label="Langkah replay ke belakang">⏮️</button>
+                    <button id="replayNext" class="btn-replay" aria-label="Langkah replay ke depan">⏭️</button>
+                    <button id="replayClose" class="btn-replay" aria-label="Tutup replay">❌</button>
                 </div>
             </div>
         </div>
@@ -105,12 +105,15 @@
                 <h2>🏆 Game Selesai!</h2>
                 <div id="winnerDisplay"></div>
                 <div id="finalScores"></div>
-                <button id="playAgainBtn" class="btn-primary">🎮 Main Lagi</button>
+                <button id="playAgainBtn" class="btn-primary" aria-label="Main lagi">🎮 Main Lagi</button>
             </div>
         </div>
 
         <!-- Toast Notification -->
         <div id="toast" class="toast hidden"></div>
+
+        <!-- Live region untuk pembaca layar (P3): teks giliran & skor, tanpa emoji -->
+        <div id="liveStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Urutan adalah kontrak: rules.js harus dimuat lebih dulu (tanpa build step). -->
