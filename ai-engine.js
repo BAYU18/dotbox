@@ -1,340 +1,299 @@
 /* ===================================
    DOTS AND BOXES - AI ENGINE
-   FIXED: Extra turn when completing box
-   Supports multi-player (4 players)
+
+   Peran: DECISION POLICY saja (kebijakan memilih gerakan).
+   Aturan papan sepenuhnya didelegasikan ke `rules.js` (ADR-0001),
+   sehingga tidak ada lagi duplikasi aturan kotak dan tidak ada
+   pola optional chaining yang menganggap garis tidak ada sebagai
+   "terpasang" (hazard phantom edge).
    =================================== */
 
-class AIEngine {
-    constructor(depth = 3) {
-        this.depth = depth;
+(function (root) {
+    'use strict';
+
+    const Aturan =
+        (typeof globalThis !== 'undefined' && globalThis.Rules) ||
+        (typeof module !== 'undefined' && module.exports ? require('./rules.js') : null);
+
+    if (!Aturan) {
+        throw new Error('rules.js harus dimuat lebih dulu daripada ai-engine.js');
     }
 
-    /* ===============================
-       MAIN AI TURN (AUTO CHAIN PLAY)
-    =============================== */
-    playAITurn(gameState, playerIndex, callback) {
-        let state = this.cloneState(gameState);
-        let currentPlayer = playerIndex;
+    const BATAS_WAKTU_CARI_MS = 1500; // time budget agar UI tidak membeku (7x7, depth 5)
 
-        while (true) {
-            const move = this.getBestMove(state, currentPlayer);
+    class AIEngine {
+        constructor(depth = 3) {
+            this.depth = Math.max(1, Number(depth) || 1);
+        }
 
-            if (!move) break;
+        /* ===============================
+           BEST MOVE (pencarian berkedalaman)
+        =============================== */
 
-            const result = this.simulateMove(state, move, currentPlayer);
-            state = result.state;
+        getBestMove(gameState, playerIndex) {
+            const legal = Aturan.availableMoves(gameState);
+            if (legal.length === 0) return null;
 
-            // jika tidak dapat box → stop giliran
-            if (!result.extraTurn) {
-                currentPlayer = (currentPlayer + 1) % state.players.length;
-                break;
+            // Semua gerakan bernilai sama di papan kosong: tidak perlu mencari.
+            if (legal.length === Aturan.totalBoxes(gameState) * 2) {
+                return legal[Math.floor(Math.random() * legal.length)];
             }
 
-            // jika dapat box → AI lanjut lagi
+            const waktuMulai = Date.now();
+            const posisiAwal = this._toSearchState(gameState);
+            const hasil = this.searchPilihGerakan(posisiAwal, playerIndex, this.depth, waktuMulai);
+
+            if (hasil && hasil.move) return hasil.move;
+
+            // Jaring pengaman: bila pencarian tidak menghasilkan apa pun, pakai heuristik aman.
+            return this.pilihGerakanAman(gameState, playerIndex, legal);
         }
 
-        callback(state, currentPlayer);
-    }
+        /* ===============================
+           MINIMAX + ALPHA-BETA
+        =============================== */
 
-    /* ===============================
-       BEST MOVE
-    =============================== */
+        searchPilihGerakan(state, player, depth, waktuMulai) {
+            const moves = this._urutkanPertama(Aturan.availableMoves(state), state, player);
+            let best = null;
+            let bestNilai = -Infinity;
+            let bestMengklaim = false;
 
-    getBestMove(gameState, playerIndex) {
-        const availableMoves = this.getAvailableMoves(gameState);
+            for (const move of moves) {
+                const r = Aturan.applyMove(state, move, player);
+                // Setelah gerakan, giliran tetap `player` bila ia mengklaim kotak.
+                const nilai = this.search(
+                    r.state,
+                    r.extraTurn ? player : this._berikutnya(state, player),
+                    player,
+                    depth,
+                    -Infinity,
+                    Infinity,
+                    waktuMulai
+                );
 
-        if (availableMoves.length === 0) return null;
+                // Tie-break eksplisit: mengklaim kotak menang atas gerakan bernilai sama.
+                // Tanpa ini, beberapa kandidat bernilai sama membuat AI bisa melewatkan
+                // kotak yang sudah tinggal satu sisi.
+                const mengklaim = r.boxesGained.length > 0;
+                const lebihBaik =
+                    best === null ||
+                    nilai > bestNilai ||
+                    (nilai === bestNilai && mengklaim && !bestMengklaim);
 
-        // PRIORITY 1: complete box
-        const boxMoves = this.getBoxCompletingMoves(gameState);
-        if (boxMoves.length > 0) {
-            return boxMoves[Math.floor(Math.random() * boxMoves.length)];
-        }
-
-        // PRIORITY 2: safe move
-        const safeMoves = this.getSafeMoves(gameState, playerIndex);
-
-        if (safeMoves.length > 0) {
-            return this.pickBestMoveWithRandomness(
-                gameState,
-                safeMoves,
-                playerIndex
-            );
-        }
-
-        // PRIORITY 3: sacrifice
-        return this.pickLeastDamagingMove(
-            gameState,
-            availableMoves,
-            playerIndex
-        );
-    }
-
-    /* ===============================
-       AVAILABLE MOVES
-    =============================== */
-
-    getAvailableMoves(gameState) {
-        const gridSize = gameState.config.gridSize;
-        const moves = [];
-
-        for (let r = 0; r < gridSize; r++) {
-            for (let c = 0; c < gridSize - 1; c++) {
-                if (gameState.edges.horizontal[r][c].owner === null) {
-                    moves.push({ type: "horizontal", row: r, col: c });
+                if (lebihBaik) {
+                    bestNilai = nilai;
+                    best = move;
+                    bestMengklaim = mengklaim;
                 }
             }
+
+            return { move: best, score: bestNilai };
         }
 
-        for (let r = 0; r < gridSize - 1; r++) {
-            for (let c = 0; c < gridSize; c++) {
-                if (gameState.edges.vertical[r][c].owner === null) {
-                    moves.push({ type: "vertical", row: r, col: c });
+        /* `state` = papan, `giliran` = pemain yang bergerak, `playerAkar` = pemain
+           yang keputusannya sedang kita cari. Nilai selalu dari sudut `playerAkar`. */
+        search(state, giliran, playerAkar, depth, alpha, beta, waktuMulai) {
+            if (Date.now() - waktuMulai > BATAS_WAKTU_CARI_MS) {
+                return this.evaluate(state, playerAkar); // habis waktu: nilai apa adanya
+            }
+
+            const moves = Aturan.availableMoves(state);
+            if (moves.length === 0 || depth <= 0) {
+                return this.evaluate(state, playerAkar);
+            }
+
+            const memaksimalkan = giliran === playerAkar;
+            let best = memaksimalkan ? -Infinity : Infinity;
+
+            for (const move of this._urutkanPertama(moves, state, giliran)) {
+                const r = Aturan.applyMove(state, move, giliran);
+                // Mengklaim kotak = giliran tetap; kalau tidak, giliran berpindah.
+                const nilai = r.extraTurn
+                    ? this.search(r.state, giliran, playerAkar, depth, alpha, beta, waktuMulai)
+                    : this.search(r.state, this._berikutnya(state, giliran), playerAkar, depth - 1, alpha, beta, waktuMulai);
+
+                if (memaksimalkan) {
+                    best = Math.max(best, nilai);
+                    alpha = Math.max(alpha, best);
+                } else {
+                    best = Math.min(best, nilai);
+                    beta = Math.min(beta, best);
+                }
+
+                if (beta <= alpha) break; // alpha-beta pruning
+            }
+
+            return best;
+        }
+
+        evaluate(state, player) {
+            const gridSize = state.config.gridSize;
+            const lawan = this._berikutnya(state, player);
+            let skor = 0;
+
+            for (let r = 0; r < gridSize - 1; r++) {
+                for (let c = 0; c < gridSize - 1; c++) {
+                    const owner = state.boxes[r][c].owner;
+                    if (owner === player) skor += 100;
+                    else if (owner === lawan) skor -= 50;
                 }
             }
+
+            return skor;
         }
 
-        return moves;
-    }
+        /* ===============================
+           HEURISTIK PENDUKUNG
+        =============================== */
 
-    /* ===============================
-       BOX COMPLETING
-    =============================== */
+        getAvailableMoves(gameState) {
+            return Aturan.availableMoves(gameState);
+        }
 
-    getBoxCompletingMoves(gameState) {
-        const moves = [];
+        getBoxCompletingMoves(gameState) {
+            return this.getAvailableMoves(gameState)
+                .filter((move) => this.wouldCompleteBox(gameState, move));
+        }
 
-        for (const move of this.getAvailableMoves(gameState)) {
-            if (this.wouldCompleteBox(gameState, move)) {
-                moves.push(move);
+        /* Nama dipertahankan sebagai pembungkus tipis di atas `Rules`
+           agar tidak ada perhitungan kotak kedua (lihat ledger Task 2). */
+        isBoxAlmostComplete(state, r, c) {
+            if (!this._kotakDalamPapan(state, r, c)) return false;
+            if (state.boxes[r][c].owner !== null) return false;
+            return this._jumlahSisi(state, r, c) === 3;
+        }
+
+        wouldCompleteBox(state, move) {
+            const r = Aturan.applyMove(state, move, this._pemainBerjalan(state));
+            return r.boxesGained.length > 0;
+        }
+
+        getSafeMoves(state, player) {
+            const hasil = [];
+            for (const move of Aturan.availableMoves(state)) {
+                const r = Aturan.applyMove(state, move, player);
+                if (r.boxesGained.length > 0) continue;           // menyelesaikan kotak: selalu aman
+                if (this._memberiKotakLawan(r.state, player)) continue; // membuka kotak untuk lawan
+                hasil.push(move);
             }
+            return hasil;
         }
 
-        return moves;
-    }
-
-    wouldCompleteBox(state, move) {
-        const grid = state.config.gridSize;
-
-        if (move.type === "horizontal") {
-            if (
-                move.row > 0 &&
-                this.isBoxAlmostComplete(state, move.row - 1, move.col)
-            )
-                return true;
-
-            if (
-                move.row < grid - 1 &&
-                this.isBoxAlmostComplete(state, move.row, move.col)
-            )
-                return true;
-        } else {
-            if (
-                move.col > 0 &&
-                this.isBoxAlmostComplete(state, move.row, move.col - 1)
-            )
-                return true;
-
-            if (
-                move.col < grid - 1 &&
-                this.isBoxAlmostComplete(state, move.row, move.col)
-            )
-                return true;
+        wouldGiveOpponentBox(state, move, player) {
+            const r = Aturan.applyMove(state, move, player);
+            if (r.boxesGained.length > 0) return false;
+            return this._memberiKotakLawan(r.state, player);
         }
 
-        return false;
-    }
-
-    isBoxAlmostComplete(state, r, c) {
-        let count = 0;
-
-        if (state.edges.horizontal[r][c]?.owner !== null) count++;
-        if (state.edges.horizontal[r + 1]?.[c]?.owner !== null) count++;
-        if (state.edges.vertical[r]?.[c]?.owner !== null) count++;
-        if (state.edges.vertical[r]?.[c + 1]?.owner !== null) count++;
-
-        return count === 3;
-    }
-
-    /* ===============================
-       SAFE MOVES
-    =============================== */
-
-    getSafeMoves(state, player) {
-        return this.getAvailableMoves(state).filter(
-            (m) => !this.wouldGiveOpponentBox(state, m, player)
-        );
-    }
-
-    wouldGiveOpponentBox(state, move, player) {
-        const result = this.simulateMove(state, move, player);
-        const s = result.state;
-
-        const grid = s.config.gridSize;
-
-        if (move.type === "horizontal") {
-            if (
-                move.row > 0 &&
-                this.isBoxAlmostComplete(s, move.row - 1, move.col)
-            )
-                return true;
-
-            if (
-                move.row < grid - 1 &&
-                this.isBoxAlmostComplete(s, move.row, move.col)
-            )
-                return true;
-        } else {
-            if (
-                move.col > 0 &&
-                this.isBoxAlmostComplete(s, move.row, move.col - 1)
-            )
-                return true;
-
-            if (
-                move.col < grid - 1 &&
-                this.isBoxAlmostComplete(s, move.row, move.col)
-            )
-                return true;
+        simulateMove(gameState, move, player) {
+            const r = Aturan.applyMove(gameState, move, player);
+            return { state: r.state, extraTurn: r.extraTurn, boxesGained: r.boxesGained };
         }
 
-        return false;
-    }
-
-    /* ===============================
-       SIMULATE MOVE (FIXED)
-    =============================== */
-
-    simulateMove(gameState, move, player) {
-        const state = this.cloneState(gameState);
-
-        if (move.type === "horizontal") {
-            state.edges.horizontal[move.row][move.col].owner = player;
-        } else {
-            state.edges.vertical[move.row][move.col].owner = player;
+        evaluateMove(state, move, player) {
+            const r = Aturan.applyMove(state, move, player);
+            return this.evaluate(r.state, player);
         }
 
-        const extraTurn = this.applyCompletedBoxes(state, move, player);
+        cloneState(state) {
+            return Aturan.copyState(state);
+        }
 
-        return { state, extraTurn };
-    }
+        /* Jalur lama: sekarang memakai `Rules` dan berhenti sendiri.
+           Mengembalikan { state, currentPlayer } seperti sebelumnya. */
+        playAITurn(gameState, playerIndex) {
+            let state = Aturan.copyState(gameState);
+            let currentPlayer = playerIndex;
+            const jumlahPemain = (gameState.players || []).length || 1;
+            let keamanan = 0;
 
-    /* ===============================
-       APPLY BOXES (RETURN BOOL)
-    =============================== */
+            while (keamanan++ < 1000) {
+                const move = this.getBestMove(state, currentPlayer);
+                if (!move) break;
 
-    applyCompletedBoxes(state, move, player) {
-        const grid = state.config.gridSize;
-        let completed = false;
+                const hasil = Aturan.applyMove(state, move, currentPlayer);
+                state = hasil.state;
 
-        const check = (r, c) => {
-            if (
-                state.edges.horizontal[r][c]?.owner !== null &&
-                state.edges.horizontal[r + 1]?.[c]?.owner !== null &&
-                state.edges.vertical[r]?.[c]?.owner !== null &&
-                state.edges.vertical[r]?.[c + 1]?.owner !== null
-            ) {
-                if (state.boxes[r][c].owner === null) {
-                    state.boxes[r][c].owner = player;
-                    completed = true;
+                if (!hasil.extraTurn) {
+                    currentPlayer = (currentPlayer + 1) % jumlahPemain;
+                    break;
                 }
             }
-        };
 
-        if (move.type === "horizontal") {
-            if (move.row > 0) check(move.row - 1, move.col);
-            if (move.row < grid - 1) check(move.row, move.col);
-        } else {
-            if (move.col > 0) check(move.row, move.col - 1);
-            if (move.col < grid - 1) check(move.row, move.col);
+            return { state, currentPlayer };
         }
 
-        return completed;
-    }
+        /* ===============================
+           INTERNAL
+        =============================== */
 
-    /* ===============================
-       MOVE EVALUATION
-    =============================== */
+        _toSearchState(gameState) {
+            return gameState;
+        }
 
-    evaluateMove(state, move, player) {
-        const result = this.simulateMove(state, move, player);
-        const s = result.state;
+        _berikutnya(state, player) {
+            const jumlah = (state.players || []).length || 2;
+            return (player + 1) % jumlah;
+        }
 
-        let score = 0;
-        const grid = s.config.gridSize;
+        _pemainBerjalan(state) {
+            return typeof state.currentPlayerIndex === 'number' ? state.currentPlayerIndex : 0;
+        }
 
-        for (let r = 0; r < grid - 1; r++) {
-            for (let c = 0; c < grid - 1; c++) {
-                const owner = s.boxes[r][c].owner;
+        _kotakDalamPapan(state, r, c) {
+            const gridSize = state.config.gridSize;
+            return r >= 0 && c >= 0 && r <= gridSize - 2 && c <= gridSize - 2;
+        }
 
-                if (owner === player) score += 100;
-                else if (owner !== null) score -= 50;
+        _jumlahSisi(state, r, c) {
+            let jumlah = 0;
+            if (state.edges.horizontal[r][c].owner !== null) jumlah++;
+            if (state.edges.horizontal[r + 1][c].owner !== null) jumlah++;
+            if (state.edges.vertical[r][c].owner !== null) jumlah++;
+            if (state.edges.vertical[r][c + 1].owner !== null) jumlah++;
+            return jumlah;
+        }
+
+        /* Apakah ada kotak yang sudah tinggal 1 sisi di papan `state`
+           (artinya lawan bisa mengklaimnya lebih dulu). */
+        _memberiKotakLawan(state, player) {
+            const gridSize = state.config.gridSize;
+            for (let r = 0; r < gridSize - 1; r++) {
+                for (let c = 0; c < gridSize - 1; c++) {
+                    if (state.boxes[r][c].owner !== null) continue;
+                    if (this._jumlahSisi(state, r, c) === 3) return true;
+                }
             }
+            return false;
         }
 
-        score += Math.random() * 5;
-
-        return score;
-    }
-
-    pickBestMoveWithRandomness(state, moves, player) {
-        const scored = moves.map((m) => ({
-            move: m,
-            score: this.evaluateMove(state, m, player),
-        }));
-
-        scored.sort((a, b) => b.score - a.score);
-
-        const best = scored[0].score;
-
-        const bestMoves = scored
-            .filter((m) => m.score >= best - 5)
-            .map((m) => m.move);
-
-        return bestMoves[Math.floor(Math.random() * bestMoves.length)];
-    }
-
-    pickLeastDamagingMove(state, moves, player) {
-        let best = moves[0];
-        let bestScore = this.evaluateMove(state, best, player);
-
-        for (let i = 1; i < moves.length; i++) {
-            const score = this.evaluateMove(state, moves[i], player);
-
-            if (score > bestScore) {
-                bestScore = score;
-                best = moves[i];
+        /* Urutkan gerakan: yang mengklaim kotak dulu (mempercepat alpha-beta). */
+        _urutkanPertama(moves, state, player) {
+            const mengklaim = [];
+            const lainnya = [];
+            for (const move of moves) {
+                const r = Aturan.applyMove(state, move, player);
+                if (r.boxesGained.length > 0) mengklaim.push(move);
+                else lainnya.push(move);
             }
+            return mengklaim.concat(lainnya);
         }
 
-        return best;
+        pilihGerakanAman(gameState, playerIndex, legal) {
+            const kotak = this.getBoxCompletingMoves(gameState);
+            if (kotak.length > 0) return kotak[0];
+
+            const aman = this.getSafeMoves(gameState, playerIndex);
+            if (aman.length > 0) return aman[0];
+
+            const daftar = legal || Aturan.availableMoves(gameState);
+            return daftar[Math.floor(Math.random() * daftar.length)];
+        }
     }
 
-    /* ===============================
-       UTIL
-    =============================== */
-
-    cloneState(state) {
-        return {
-            config: { ...state.config },
-
-            edges: {
-                horizontal: state.edges.horizontal.map((r) =>
-                    r.map((e) => ({ ...e }))
-                ),
-
-                vertical: state.edges.vertical.map((r) =>
-                    r.map((e) => ({ ...e }))
-                ),
-            },
-
-            boxes: state.boxes.map((r) => r.map((b) => ({ ...b }))),
-
-            players: state.players.map((p) => ({ ...p })),
-        };
+    root.AIEngine = AIEngine;
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = AIEngine;
     }
-}
-
-if (typeof module !== "undefined") {
-    module.exports = AIEngine;
-}
+})(typeof globalThis !== 'undefined' ? globalThis : this);
