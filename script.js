@@ -199,14 +199,53 @@ let canvas, ctx;
 let dotPositions = [];
 let lineSegments = [];
 
+/**
+ * Hitung ukuran logis (CSS px) kanvas dari elemen induknya.
+ * Dipakai `setupCanvas()` dan `handleResize()` supaya keduanya tidak menyimpang.
+ */
+function hitungUkuranKanvas(container) {
+    return Math.min(container.clientWidth - 32, container.clientHeight - 32, 500);
+}
+
+/**
+ * Terapkan ukuran kanvas untuk layar ber-DPR (P5).
+ *
+ * Ruang gambar tetap CSS px: bitmap diperbesar `dpr` kali, `style` tetap CSS px,
+ * dan konteks di-`setTransform(dpr,...)` supaya semua gambar (yang ditulis dalam
+ * CSS px) jatuh di bitmap beresolusi tinggi. Karena ruang gambar tidak berubah,
+ * `dotPositions`, `lineSegments`, dan `hitRadius` tidak perlu disesuaikan.
+ */
+let dprKanvas = 1;
+
+function pasangUkuranCanvas(size) {
+    dprKanvas = window.devicePixelRatio || 1;
+    canvas.width = size * dprKanvas;
+    canvas.height = size * dprKanvas;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    ctx.setTransform(dprKanvas, 0, 0, dprKanvas, 0, 0);
+}
+
+/**
+ * Konversi koordinat pointer (clientX/clientY) ke ruang gambar CSS px.
+ *
+ * MURNI: tidak membaca state global, supaya bisa diuji tanpa DOM.
+ * Satu-satunya rumus yang dipakai KEDUA handler input — dua rumus berbeda
+ * adalah cara paling mudah membuat hit-test menyimpang (P5, Ruling 2).
+ */
+function hitungKoordinatPointer(rect, clientX, clientY, canvasEl, dpr) {
+    const skalaX = (canvasEl.width > 0 && rect.width > 0) ? (canvasEl.width / rect.width) / dpr : 1;
+    const skalaY = (canvasEl.height > 0 && rect.height > 0) ? (canvasEl.height / rect.height) / dpr : 1;
+    return { x: (clientX - rect.left) * skalaX, y: (clientY - rect.top) * skalaY };
+}
+
 function setupCanvas() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     
     const container = canvas.parentElement;
-    const size = Math.min(container.clientWidth - 32, container.clientHeight - 32, 500);
-    canvas.width = size;
-    canvas.height = size;
+    const size = hitungUkuranKanvas(container);
+    pasangUkuranCanvas(size);
     
     calculatePositions();
     
@@ -222,9 +261,8 @@ function setupCanvas() {
 
 function handleResize() {
     const container = canvas.parentElement;
-    const size = Math.min(container.clientWidth - 32, container.clientHeight - 32, 500);
-    canvas.width = size;
-    canvas.height = size;
+    const size = hitungUkuranKanvas(container);
+    pasangUkuranCanvas(size);
     calculatePositions();
     drawBoard();
 }
@@ -232,11 +270,20 @@ function handleResize() {
 function calculatePositions() {
     const gridSize = gameState.config.gridSize;
     const padding = 50;
-    const availableSize = Math.min(canvas.width, canvas.height) - padding * 2;
+    // Ukuran GAMBAR (ruang CSS px), bukan ukuran bitmap: bitmap = CSS * DPR
+    // (P5). Tanpa pembagian ini, padding 50 px ikut membesar bersama bitmap
+    // dan titik-titik bergeser ke luar bidang gambar.
+    const ukuranGambar = Math.min(canvas.width, canvas.height) / dprKanvas;
+    const availableSize = ukuranGambar - padding * 2;
     const spacing = availableSize / (gridSize - 1);
     
     dotPositions = [];
     lineSegments = { horizontal: [], vertical: [] };
+    
+    // Titik-titik ditulis dalam CSS px; `setTransform` (P5) yang memetakannya ke
+    // bitmap ber-DPR, jadi TIDAK ada penskalaan tambahan di sini. Jalur "canvas
+    // tanpa getContext" (dipakai sebagian test) tetap mendapat ukuran yang benar
+    // karena default `dprKanvas` = 1.
     
     // Calculate dot positions
     for (let row = 0; row < gridSize; row++) {
@@ -446,8 +493,8 @@ function handleCanvasClick(event) {
     if (currentPlayer.isAI) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const { x, y } = hitungKoordinatPointer(
+        rect, event.clientX, event.clientY, canvas, window.devicePixelRatio || 1);
     
     handleLineSelection(x, y);
 }
@@ -461,8 +508,8 @@ function handleTouchStart(event) {
     
     const rect = canvas.getBoundingClientRect();
     const touch = event.touches[0];
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
+    const { x, y } = hitungKoordinatPointer(
+        rect, touch.clientX, touch.clientY, canvas, window.devicePixelRatio || 1);
     
     handleLineSelection(x, y);
 }
