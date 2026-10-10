@@ -35,9 +35,9 @@ case "${1:-}" in
   *) die "opsi tidak dikenal: $1" ;;
 esac
 
+mkdir -p "$(dirname "$BIN_DST")" "$(dirname "$CRON_FILE")" "$(dirname "$LOGROTATE_FILE")" "$LOG_DIR"
 install -m 0755 "$SRC" "$BIN_DST"
 log "monitor dipasang: $BIN_DST"
-mkdir -p "$LOG_DIR"
 
 # Entri cron.d: jalankan tiap 5 menit. cron.d butuh field user.
 cat > "$CRON_FILE" <<EOF
