@@ -17,6 +17,7 @@ SRC="$SELF_DIR/monitor.sh"
 BIN_DST="${DOTBOX_MONITOR_BIN:-/usr/local/bin/dotbox-monitor}"
 CRON_FILE="${DOTBOX_CRON_FILE:-/etc/cron.d/dotbox-monitor}"
 LOG_DIR="${DOTBOX_LOG_DIR:-/var/log/dotbox}"
+LOGROTATE_FILE="${DOTBOX_LOGROTATE_FILE:-/etc/logrotate.d/dotbox}"
 
 log() { printf '[install-monitor] %s\n' "$*" >&2; }
 die() { printf '[install-monitor][GALAT] %s\n' "$*" >&2; exit 1; }
@@ -25,8 +26,8 @@ die() { printf '[install-monitor][GALAT] %s\n' "$*" >&2; exit 1; }
 
 case "${1:-}" in
   --uninstall)
-    rm -f "$CRON_FILE" "$BIN_DST"
-    log "cron & biner dipasang dihapus ($CRON_FILE, $BIN_DST)"
+    rm -f "$CRON_FILE" "$BIN_DST" "$LOGROTATE_FILE"
+    log "cron, biner & logrotate dihapus ($CRON_FILE, $BIN_DST, $LOGROTATE_FILE)"
     log "SELESAI. Log di $LOG_DIR dibiarkan (hapus manual bila perlu)."
     exit 0
     ;;
@@ -48,6 +49,39 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
 chmod 0644 "$CRON_FILE"
 log "cron dipasang: $CRON_FILE (tiap 5 menit)"
+
+# Logrotate: batasi pertumbuhan log supaya tidak mengisi disk.
+# Tiap 5 menit = 288 baris/hari untuk health.log; tanpa rotasi berkas ini
+# tumbuh tanpa batas. Kita jaga 14 hari (health) & 30 hari (alert, hanya terisi
+# saat gagal) lalu di-gzip.
+cat > "$LOGROTATE_FILE" <<EOF
+# Logrotate dotbox — dipasang oleh deploy/install-monitor.sh
+$LOG_DIR/health.log {
+    weekly
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+}
+$LOG_DIR/alert.log {
+    monthly
+    rotate 12
+    compress
+    missingok
+    notifempty
+    create 0644 root root
+}
+EOF
+chmod 0644 "$LOGROTATE_FILE"
+if command -v logrotate >/dev/null 2>&1; then
+  logrotate --debug "$LOGROTATE_FILE" >/dev/null 2>&1 \
+    && log "logrotate dipasang & validasi lolos: $LOGROTATE_FILE" \
+    || log "PERINGATAN: logrotate --debug menolak konfigurasi (periksa $LOGROTATE_FILE)"
+else
+  log "PERINGATAN: logrotate tidak ada; konfigurasi ditulis tapi tidak aktif"
+fi
 
 # Jalankan sekali sekarang supaya log langsung terbentuk.
 "$BIN_DST" >/dev/null 2>&1 && log "pemeriksaan pertama: SEMUA OK" || log "PERINGATAN: pemeriksaan pertama menemukan kegagalan (lihat $LOG_DIR/health.log)"

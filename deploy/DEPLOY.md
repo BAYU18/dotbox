@@ -134,8 +134,8 @@ deploy/install-nginx.sh --uninstall    # lepas include + reload, default tetap j
 Pemantauan dipasang dengan satu perintah (idempoten):
 
 ```bash
-deploy/install-monitor.sh              # pasang cron /etc/cron.d/dotbox-monitor
-deploy/install-monitor.sh --uninstall  # lepas
+deploy/install-monitor.sh              # pasang cron + logrotate /etc/cron.d/dotbox-monitor
+deploy/install-monitor.sh --uninstall  # lepas (cron, biner, logrotate)
 ```
 
 Yang diperiksa tiap 5 menit: nginx hidup, symlink rilis valid + 6 berkas lengkap, HTTP
@@ -156,9 +156,27 @@ tail -n 40 /var/log/nginx/error.log
 df -h /
 ```
 
-> **Catatan alerting.** Cron ini mencatat, bukan mengirim notifikasi (belum ada kanal
-> alerting/email yang disetujui). Untuk integrasi alert, jalankan `dotbox-monitor` dan
-> periksa kode keluarnya (0 = semua OK, >0 = ada kegagalan).
+### Alerting (tanpa kanal eksternal)
+
+Saat ada pemeriksaan **GAGAL**, monitor otomatis:
+
+1. menulis baris ringkas + rincian ke `/var/log/dotbox/alert.log` (berkas ini **hanya** terisi
+   saat gagal, jadi kosong/bersih selama situs sehat) — periksa dengan
+   `test -s /var/log/dotbox/alert.log && cat /var/log/dotbox/alert.log`;
+2. mengirim satu pesan ke **syslog** (`logger -t dotbox-monitor -p user.err`) —
+   lihat dengan `journalctl -t dotbox-monitor` atau `grep dotbox-monitor /var/log/syslog`;
+3. memanggil hook kanal eksternal **bila** `DOTBOX_ALERT_HOOK` disetel ke skrip yang dapat
+   dieksekusi (ringkasan kegagalan dikirim sebagai argumen + stdin). Kanal email/Slack/Telegram
+   belum dipasang karena butuh kredensial yang belum disetujui — begitu kanal diputuskan, cukup
+   setel `DOTBOX_ALERT_HOOK` di `/etc/cron.d/dotbox-monitor`.
+
+Kode keluar monitor: `0` = semua OK, `>0` = ada kegagalan (berguna untuk cron alerting).
+
+### Logrotate
+
+Pertumbuhan log dibatasi lewat `/etc/logrotate.d/dotbox` (dipasang oleh `install-monitor.sh`):
+`health.log` disimpan 14 rotasi mingguan (terkompresi), `alert.log` 12 rotasi bulanan. Validasi:
+`logrotate --debug /etc/logrotate.d/dotbox`.
 
 ---
 

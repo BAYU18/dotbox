@@ -14,6 +14,18 @@
 #      <ISO-8601> <OK|GAGAL> <nama-pemeriksaan> <detail>
 #  Ini memudahkan `tail`/`grep GAGAL` tanpa alat tambahan.
 #
+#  ALERTING LOKAL (tanpa kanal eksternal):
+#  Bila ADA pemeriksaan gagal, monitor juga:
+#    a. menulis baris ringkasan ke /var/log/dotbox/alert.log (hanya saat gagal,
+#       jadi berkas ini kosong/bersih selama situs sehat), dan
+#    b. mengirim satu pesan ke syslog lewat `logger -t dotbox-monitor` dengan
+#       prioritas `user.err`, supaya kegagalan terlihat di journal/syslog dan
+#       bisa ditangkap alat pemantau mana pun di masa depan.
+#  Ini sengaja tidak memakai email/Slack/Telegram: kanal eksternal butuh
+#  kredensial yang belum disetujui. Bila kelak kanal disetujui, cukup setel
+#  DOTBOX_ALERT_HOOK ke skrip yang memanggil kanal itu — hook dipanggil dengan
+#  ringkasan kegagalan sebagai argumen.
+#
 #  Dipasang sebagai cron setiap 5 menit: /etc/cron.d/dotbox-monitor
 #  (lihat deploy/install-monitor.sh).
 #
@@ -31,6 +43,8 @@ HEALTH_URL="${DOTBOX_HEALTH_URL:-http://127.0.0.1/dotbox/health}"
 CURRENT_LINK="${DOTBOX_CURRENT_LINK:-/var/www/dotbox/current}"
 LOG_DIR="${DOTBOX_LOG_DIR:-/var/log/dotbox}"
 LOG_FILE="$LOG_DIR/health.log"
+ALERT_FILE="${DOTBOX_ALERT_FILE:-$LOG_DIR/alert.log}"
+ALERT_HOOK="${DOTBOX_ALERT_HOOK:-}"
 TIMEOUT="${DOTBOX_HEALTH_TIMEOUT:-5}"
 REQUIRED_FILES=(index.html script.js rules.js ai-engine.js turn-queue.js style.css)
 
@@ -119,11 +133,29 @@ run_checks() {
   check_health_endpoint
 }
 
+emit_alert() {
+  # Hanya saat ada kegagalan. Menulis baris ringkas ke alert.log, mengirim ke
+  # syslog, dan (bila disetel) memanggil hook kanal eksternal.
+  local ringkas gagal_lines
+  gagal_lines="$(printf '%s\n' "${LINES[@]}" | grep ' GAGAL ' || true)"
+  ringkas="$(ts) GAGAL sebanyak $FAILS dari 4 pemeriksaan"
+  printf '%s\n' "$ringkas" >> "$ALERT_FILE" 2>/dev/null || true
+  printf '%s\n' "$gagal_lines" >> "$ALERT_FILE" 2>/dev/null || true
+  # syslog: prioritas user.err supaya terlihat di `journalctl`/syslog.
+  command -v logger >/dev/null 2>&1 && \
+    logger -t dotbox-monitor -p user.err "$ringkas" 2>/dev/null || true
+  # Hook kanal eksternal (opsional, hanya bila disetel & dapat dieksekusi).
+  if [ -n "$ALERT_HOOK" ] && [ -x "$ALERT_HOOK" ]; then
+    printf '%s\n' "$gagal_lines" | "$ALERT_HOOK" "$ringkas" 2>/dev/null || true
+  fi
+}
+
 finish() {
   local line
   for line in "${LINES[@]}"; do printf '%s\n' "$line"; done
   if [ "$MODE" != "--check" ]; then
     for line in "${LINES[@]}"; do printf '%s\n' "$line" >> "$LOG_FILE"; done
+    if [ "$FAILS" -gt 0 ]; then emit_alert; fi
   fi
   return "$FAILS"
 }
