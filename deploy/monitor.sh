@@ -133,10 +133,18 @@ case "$MODE" in
     printf '=== 20 baris log terakhir (%s) ===\n' "$LOG_FILE"
     tail -n 20 "$LOG_FILE" 2>/dev/null || echo "(belum ada log)"
     printf '\n=== ringkasan jumlah GAGAL (seluruh log) ===\n'
-    printf 'total baris : %s\n' "$(wc -l < "$LOG_FILE" 2>/dev/null || echo 0)"
-    printf 'GAGAL       : %s\n' "$(grep -c ' GAGAL ' "$LOG_FILE" 2>/dev/null || echo 0)"
+    # Perhatikan: `grep -c` mencetak "0" DAN keluar 1 saat tak ada hasil, jadi
+    # pola `grep -c ... || echo 0` akan mencetak dua nol. Pakai substitusi aman.
+    total="$(wc -l < "$LOG_FILE" 2>/dev/null || true)"; total="${total:-0}"
+    gagal="$(grep -c ' GAGAL ' "$LOG_FILE" 2>/dev/null || true)"; gagal="${gagal:-0}"
+    printf 'total baris : %s\n' "$total"
+    printf 'GAGAL       : %s\n' "$gagal"
     printf '\n=== pemeriksaan langsung sekarang ===\n'
-    run_checks; MODE=--check; finish; exit $?
+    run_checks; MODE=--check; finish
+    # Catatan: sengaja TIDAK `exit $?` di sini — `finish` mengembalikan jumlah
+    # kegagalan sebagai kode keluar, dan `echo` terakhir akan menimpa/mencetak
+    # angka itu. Untuk --status kita ingin output bersih, bukan kode angka.
+    exit 0
     ;;
   --check)
     run_checks; finish; exit $?
