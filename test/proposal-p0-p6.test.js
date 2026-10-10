@@ -136,10 +136,10 @@ test('P0-a: getBestMove null TIDAK membuat giliran menggantung — minimal satu 
   const gs = mulaiPermainanAI(sb);
 
   // Paksa AI gagal menemukan langkah.
-  // PENTING: `executeAIMove` memanggil `aiEngine.getBestMove(...)`
-  // (script.js:754), BUKAN fungsi global `getBestMove`. Jadi override harus
-  // mengenai instance `aiEngine`, kalau tidak AI asli tetap memilih langkah
-  // dan test mengukur hal yang salah (merah/hijau palsu).
+  // PENTING: produksi memanggil `aiEngine.getBestMove(...)` (script.js:754), BUKAN
+  // fungsi global `getBestMove`. `aiEngine` adalah binding `let` di tingkat atas,
+  // jadi menimpa propertinya mengenai sasaran; menimpa `globalThis.getBestMove`
+  // TIDAK menggantikan apa pun. Karena itu override harus mengenai instance.
   dalam(sb, `aiEngine.getBestMove = function () { return null; }`);
 
   // Amati konsekuensi nyata dari executeAIMove.
@@ -189,7 +189,9 @@ test('P0-b: fallback hanya memakai langkah LEGAL dari Rules.availableMoves', () 
   const sb = muatScript();
   const gs = mulaiPermainanAI(sb);
 
-  dalam(sb, `getBestMove = function () { return null; }`);
+  // PENTING: produksi memanggil `aiEngine.getBestMove` (script.js:754), bukan
+  // fungsi global `getBestMove`. Override harus mengenai instance-nya.
+  dalam(sb, 'aiEngine.getBestMove = function () { return null; }');
   const legal = dalam(sb, 'JSON.stringify(Rules.availableMoves(gameState).map(m => [m.type, m.row, m.col]))');
   const daftarLegal = new Set(JSON.parse(legal).map((m) => m.join('/')));
 
